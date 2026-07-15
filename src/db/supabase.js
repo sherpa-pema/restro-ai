@@ -1,0 +1,489 @@
+/**
+ * Supabase Client & Cloud Operations — TableCraft OS
+ * 
+ * Handles all communication with the Supabase backend:
+ * push (upsert/insert), pull (select), and realtime subscriptions.
+ */
+
+import { createClient } from '@supabase/supabase-js';
+
+// ─────────────────────────────────────────────
+// Client Initialization
+// ─────────────────────────────────────────────
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://ahfuhaujycwnztryzpab.supabase.co';
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+/**
+ * Test the Supabase connection and perform initial setup.
+ * @returns {Promise<boolean>} true if connection is successful
+ */
+export async function initSupabase() {
+  try {
+    // Simple connectivity test — query the tables table with a limit of 1
+    const { error } = await supabase.from('tables').select('id').limit(1);
+    if (error) {
+      console.warn('[Supabase] Connection test returned error:', error.message);
+      // Non-fatal — table might not exist yet
+      return true;
+    }
+    console.log('[Supabase] Connection established successfully.');
+    return true;
+  } catch (err) {
+    console.error('[Supabase] Failed to initialize:', err);
+    return false;
+  }
+}
+
+// ─────────────────────────────────────────────
+// Push Functions (Local → Cloud)
+// ─────────────────────────────────────────────
+
+/** Upsert a table record to Supabase. */
+export async function pushTable(table) {
+  try {
+    const dbTable = {
+      id: table.id,
+      name: table.name,
+      seats: table.seats,
+      status: table.status,
+      category: table.category || 'Indoor',
+      current_order_id: table.current_order_id,
+      updated_at: table.updated_at
+    };
+    const { error } = await supabase
+      .from('tables')
+      .upsert(dbTable, { onConflict: 'id' });
+    if (error) {
+      console.error('[Supabase] pushTable database error:', error.message, '| Details:', error.details, '| Hint:', error.hint);
+      throw error;
+    }
+    return true;
+  } catch (err) {
+    console.error('[Supabase] pushTable failed for table:', table, 'Error:', err);
+    return null;
+  }
+}
+
+/** Upsert a menu item to Supabase. */
+export async function pushMenuItem(item) {
+  try {
+    const dbItem = {
+      id: item.id,
+      name: item.name,
+      emoji: item.emoji,
+      price: item.price,
+      category: item.category,
+      is_active: item.is_active,
+      created_at: item.created_at
+    };
+    const { error } = await supabase
+      .from('menu_items')
+      .upsert(dbItem, { onConflict: 'id' });
+    if (error) throw error;
+    return true;
+  } catch (err) {
+    console.error('[Supabase] pushMenuItem failed:', err);
+    return null;
+  }
+}
+
+/** Upsert an order to Supabase. */
+export async function pushOrder(order) {
+  try {
+    const dbOrder = {
+      id: order.id,
+      table_id: order.table_id,
+      status: order.status,
+      channel: order.channel || 'Dine-in',
+      subtotal: order.subtotal,
+      tax: order.tax,
+      service_charge: order.service_charge,
+      discount: order.discount,
+      total: order.total,
+      created_at: order.created_at,
+      paid_at: order.paid_at
+    };
+    const { error } = await supabase
+      .from('orders')
+      .upsert(dbOrder, { onConflict: 'id' });
+    if (error) throw error;
+    return true;
+  } catch (err) {
+    console.error('[Supabase] pushOrder failed:', err);
+    return null;
+  }
+}
+
+/** Upsert an order item to Supabase. */
+export async function pushOrderItem(item) {
+  try {
+    const dbItem = {
+      id: item.id,
+      order_id: item.order_id,
+      menu_item_id: item.menu_item_id,
+      name: item.name,
+      price: item.price,
+      quantity: item.quantity
+    };
+    const { error } = await supabase
+      .from('order_items')
+      .upsert(dbItem, { onConflict: 'id' });
+    if (error) throw error;
+    return true;
+  } catch (err) {
+    console.error('[Supabase] pushOrderItem failed:', err);
+    return null;
+  }
+}
+
+/** Insert a transaction record to Supabase. */
+export async function pushTransaction(tx) {
+  try {
+    const dbTx = {
+      id: tx.id,
+      order_id: tx.order_id,
+      table_name: tx.table_name,
+      amount: tx.amount,
+      payment_method: tx.payment_method,
+      currency: tx.currency,
+      paid_at: tx.paid_at
+    };
+    const { error } = await supabase
+      .from('transactions')
+      .insert(dbTx);
+    if (error) throw error;
+    return true;
+  } catch (err) {
+    console.error('[Supabase] pushTransaction failed:', err);
+    return null;
+  }
+}
+
+/** Delete a record by ID from the specified Supabase table. */
+export async function deleteFromSupabase(tableName, id) {
+  try {
+    const { error } = await supabase
+      .from(tableName)
+      .delete()
+      .eq('id', id);
+    if (error) throw error;
+    return true;
+  } catch (err) {
+    console.error(`[Supabase] deleteFromSupabase(${tableName}) failed:`, err);
+    return null;
+  }
+}
+
+// ─────────────────────────────────────────────
+// Pull Functions (Cloud → Local)
+// ─────────────────────────────────────────────
+
+/** Pull all tables from Supabase. */
+export async function pullTables() {
+  try {
+    const { data, error } = await supabase
+      .from('tables')
+      .select('*');
+    if (error) throw error;
+    return data || [];
+  } catch (err) {
+    console.error('[Supabase] pullTables failed:', err);
+    return null;
+  }
+}
+
+/** Pull active menu items from Supabase. */
+export async function pullMenuItems() {
+  try {
+    const { data, error } = await supabase
+      .from('menu_items')
+      .select('*')
+      .eq('is_active', true);
+    if (error) throw error;
+    return data || [];
+  } catch (err) {
+    console.error('[Supabase] pullMenuItems failed:', err);
+    return null;
+  }
+}
+
+/** Pull all orders from Supabase. */
+export async function pullOrders() {
+  try {
+    const { data, error } = await supabase
+      .from('orders')
+      .select('*');
+    if (error) throw error;
+    return data || [];
+  } catch (err) {
+    console.error('[Supabase] pullOrders failed:', err);
+    return null;
+  }
+}
+
+/** Pull order items for a specific order from Supabase. */
+export async function pullOrderItems(orderId) {
+  try {
+    const { data, error } = await supabase
+      .from('order_items')
+      .select('*')
+      .eq('order_id', orderId);
+    if (error) throw error;
+    return data || [];
+  } catch (err) {
+    console.error('[Supabase] pullOrderItems failed:', err);
+    return null;
+  }
+}
+
+/** Pull recent transactions from Supabase (last 50, newest first). */
+export async function pullTransactions() {
+  try {
+    const { data, error } = await supabase
+      .from('transactions')
+      .select('*')
+      .order('paid_at', { ascending: false })
+      .limit(50);
+    if (error) throw error;
+    return data || [];
+  } catch (err) {
+    console.error('[Supabase] pullTransactions failed:', err);
+    return null;
+  }
+}
+
+/** Upsert an inventory item to Supabase. */
+export async function pushInventory(item) {
+  try {
+    const dbItem = {
+      id: item.id,
+      ingredient_name: item.ingredient_name,
+      current_stock: item.current_stock,
+      unit: item.unit,
+      reorder_threshold: item.reorder_threshold,
+      unit_cost: item.unit_cost,
+      updated_at: item.updated_at
+    };
+    const { error } = await supabase
+      .from('inventory')
+      .upsert(dbItem, { onConflict: 'id' });
+    if (error) throw error;
+    return true;
+  } catch (err) {
+    console.error('[Supabase] pushInventory failed:', err);
+    return null;
+  }
+}
+
+/** Pull all inventory items from Supabase. */
+export async function pullInventory() {
+  try {
+    const { data, error } = await supabase
+      .from('inventory')
+      .select('*');
+    if (error) throw error;
+    return data || [];
+  } catch (err) {
+    console.error('[Supabase] pullInventory failed:', err);
+    return null;
+  }
+}
+
+/** Insert a waste log to Supabase. */
+export async function pushWaste(log) {
+  try {
+    const dbLog = {
+      id: log.id,
+      ingredient_id: log.ingredient_id,
+      ingredient_name: log.ingredient_name,
+      quantity: log.quantity,
+      cost: log.cost,
+      wasted_at: log.wasted_at,
+      reason: log.reason
+    };
+    const { error } = await supabase
+      .from('waste')
+      .insert(dbLog);
+    if (error) throw error;
+    return true;
+  } catch (err) {
+    console.error('[Supabase] pushWaste failed:', err);
+    return null;
+  }
+}
+
+/** Pull recent waste logs from Supabase. */
+export async function pullWaste() {
+  try {
+    const { data, error } = await supabase
+      .from('waste')
+      .select('*')
+      .order('wasted_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  } catch (err) {
+    console.error('[Supabase] pullWaste failed:', err);
+    return null;
+  }
+}
+
+/** Upsert a supplier to Supabase. */
+export async function pushSupplier(supplier) {
+  try {
+    const dbSupplier = {
+      id: supplier.id,
+      name: supplier.name,
+      contact_person: supplier.contact_person,
+      phone: supplier.phone,
+      email: supplier.email,
+      delivery_days: supplier.delivery_days,
+      updated_at: supplier.updated_at
+    };
+    const { error } = await supabase
+      .from('suppliers')
+      .upsert(dbSupplier, { onConflict: 'id' });
+    if (error) throw error;
+    return true;
+  } catch (err) {
+    console.error('[Supabase] pushSupplier failed:', err);
+    return null;
+  }
+}
+
+/** Pull all suppliers from Supabase. */
+export async function pullSuppliers() {
+  try {
+    const { data, error } = await supabase
+      .from('suppliers')
+      .select('*');
+    if (error) throw error;
+    return data || [];
+  } catch (err) {
+    console.error('[Supabase] pullSuppliers failed:', err);
+    return null;
+  }
+}
+
+/** Upsert a recipe to Supabase. */
+export async function pushRecipe(recipe) {
+  try {
+    const dbRecipe = {
+      id: recipe.id,
+      menu_item_id: recipe.menu_item_id,
+      ingredient_id: recipe.ingredient_id,
+      quantity: recipe.quantity,
+      updated_at: recipe.updated_at
+    };
+    const { error } = await supabase
+      .from('recipes')
+      .upsert(dbRecipe, { onConflict: 'id' });
+    if (error) throw error;
+    return true;
+  } catch (err) {
+    console.error('[Supabase] pushRecipe failed:', err);
+    return null;
+  }
+}
+
+/** Pull all recipes from Supabase. */
+export async function pullRecipes() {
+  try {
+    const { data, error } = await supabase
+      .from('recipes')
+      .select('*');
+    if (error) throw error;
+    return data || [];
+  } catch (err) {
+    console.error('[Supabase] pullRecipes failed:', err);
+    return null;
+  }
+}
+
+// ─────────────────────────────────────────────
+// Realtime Subscriptions
+// ─────────────────────────────────────────────
+
+/**
+ * Subscribe to realtime changes on all core tables.
+ * @param {{ onTableChange: Function, onMenuChange: Function, onOrderChange: Function, onOrderItemChange: Function, onInventoryChange: Function, onWasteChange: Function, onSupplierChange: Function, onRecipeChange: Function }} callbacks
+ * @returns {import('@supabase/supabase-js').RealtimeChannel} The channel for cleanup
+ */
+export function subscribeToChanges(callbacks) {
+  const { onTableChange, onMenuChange, onOrderChange, onOrderItemChange, onInventoryChange, onWasteChange, onSupplierChange, onRecipeChange } = callbacks;
+
+  const channel = supabase
+    .channel('tablecraft-realtime')
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'tables' },
+      (payload) => {
+        console.log('[Realtime] tables change:', payload.eventType);
+        if (onTableChange) onTableChange(payload);
+      }
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'menu_items' },
+      (payload) => {
+        console.log('[Realtime] menu_items change:', payload.eventType);
+        if (onMenuChange) onMenuChange(payload);
+      }
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'orders' },
+      (payload) => {
+        console.log('[Realtime] orders change:', payload.eventType);
+        if (onOrderChange) onOrderChange(payload);
+      }
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'order_items' },
+      (payload) => {
+        console.log('[Realtime] order_items change:', payload.eventType);
+        if (onOrderItemChange) onOrderItemChange(payload);
+      }
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'inventory' },
+      (payload) => {
+        console.log('[Realtime] inventory change:', payload.eventType);
+        if (onInventoryChange) onInventoryChange(payload);
+      }
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'waste' },
+      (payload) => {
+        console.log('[Realtime] waste change:', payload.eventType);
+        if (onWasteChange) onWasteChange(payload);
+      }
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'suppliers' },
+      (payload) => {
+        console.log('[Realtime] suppliers change:', payload.eventType);
+        if (onSupplierChange) onSupplierChange(payload);
+      }
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'recipes' },
+      (payload) => {
+        console.log('[Realtime] recipes change:', payload.eventType);
+        if (onRecipeChange) onRecipeChange(payload);
+      }
+    )
+    .subscribe((status) => {
+      console.log('[Realtime] Subscription status:', status);
+    });
+
+  return channel;
+}
+

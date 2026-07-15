@@ -1,0 +1,349 @@
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=Geist+Mono:wght@100..900&display=swap');
+
+/* ============================================================
+   TableCraft OS — Global Stylesheet
+   src/styles/index.css
+   ============================================================ */
+
+/* ----- CSS Reset Basics ----- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* ----- Font Imports ----- */
+/* Geist & Geist Mono are loaded via Google Fonts <link> in index.html.
+   This fallback ensures correct rendering if the <link> is slow. */
+
+
+/* ----- Base Body ----- */
+body {
+  font-family: 'Geist', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  min-height: 100vh;
+}
+
+/* ============================================================
+   PAGE VISIBILITY
+   ============================================================ */
+.page.hidden {
+  display: none;
+}
+
+.page {
+  animation: pageIn 200ms ease-out;
+}
+
+@keyframes pageIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ============================================================
+   COMMAND BAR — Slide Up + Fade In
+   ============================================================ */
+.command-bar-enter {
+  animation: commandBarSlideUp 200ms ease-out;
+}
+
+@keyframes commandBarSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Desktop override: the command bar is centered, so we use a subtler motion */
+@media (min-width: 1024px) {
+  .command-bar-enter {
+    animation: commandBarFadeIn 200ms ease-out;
+  }
+
+  @keyframes commandBarFadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(12px) scale(0.97);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+}
+
+/* ============================================================
+   TOAST ANIMATIONS
+   ============================================================ */
+
+/* Slide in from right */
+.toast-enter {
+  animation: toastSlideIn 300ms ease-out forwards;
+}
+
+@keyframes toastSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Slide out to right + fade */
+.toast-exit {
+  animation: toastSlideOut 300ms ease-in forwards;
+}
+
+@keyframes toastSlideOut {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+}
+
+/* ============================================================
+   PULSE SYNC INDICATOR
+   ============================================================ */
+.pulse-sync {
+  animation: pulseSync 2s ease-in-out infinite;
+}
+
+@keyframes pulseSync {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 currentColor;
+  }
+  50% {
+    opacity: 0.6;
+    box-shadow: 0 0 0 4px transparent;
+  }
+}
+
+/* ============================================================
+   TABLE CARD HOVER
+   ============================================================ */
+.table-card-hover {
+  transition: transform 150ms ease, box-shadow 150ms ease;
+}
+
+.table-card-hover:hover {
+  transform: scale(1.03);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+}
+
+.table-card-hover:active {
+  transform: scale(0.98);
+}
+
+/* ============================================================
+   CUSTOM FOCUS STYLES
+   ============================================================ */
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: #000000;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.06);
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+/* ============================================================
+   SMOOTH TRANSITIONS — Generic Helpers
+   ============================================================ */
+.transition-page {
+  transition: opacity 200ms ease, transform 200ms ease;
+}
+
+/* ============================================================
+   SIDEBAR NAV ITEM ACTIVE STATE
+   ============================================================ */
+.nav-item {
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.nav-item.active {
+  background-color: #eceef0; /* surface-container */
+  color: #000000; /* primary */
+  font-weight: 600;
+}
+
+/* ============================================================
+   MOBILE TAB ACTIVE STATE
+   ============================================================ */
+#mobile-tabs button.active {
+  color: #000000; /* primary */
+}
+
+#mobile-tabs button.active .material-symbols-outlined {
+  font-variation-settings: 'FILL' 1;
+}
+
+/* ============================================================
+   SCROLLBAR — already in <style> inline, duplicated here for
+   components that import only this CSS file.
+   ============================================================ */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #c4c7c7;
+  border-radius: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #747878;
+}
+
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #c4c7c7 transparent;
+}
+
+/* ============================================================
+   BILLING ITEM — quantity controls
+   ============================================================ */
+.billing-qty-btn {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1px solid #c4c7c7;
+  background: #f2f4f6;
+  color: #444748;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
+  user-select: none;
+}
+
+.billing-qty-btn:hover {
+  background: #e0e3e5;
+  color: #000000;
+}
+
+.billing-qty-btn:active {
+  transform: scale(0.92);
+}
+
+/* ============================================================
+   TERMINAL CONSOLE SYSTEM
+   ============================================================ */
+.terminal-console {
+  transition: height 300ms cubic-bezier(0.4, 0, 0.2, 1), transform 300ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 300ms ease;
+  font-family: 'Geist Mono', Monaco, Consolas, 'Andale Mono', monospace;
+}
+
+/* Scrollbar for terminal output */
+.terminal-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.terminal-scrollbar::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.5);
+}
+.terminal-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(16, 185, 129, 0.2);
+  border-radius: 3px;
+}
+.terminal-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(16, 185, 129, 0.4);
+}
+.terminal-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(16, 185, 129, 0.2) rgba(15, 23, 42, 0.5);
+}
+
+/* Cursor Animation */
+@keyframes terminalBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+.terminal-cursor {
+  display: inline-block;
+  width: 8px;
+  height: 15px;
+  background-color: #10b981; /* emerald-500 */
+  animation: terminalBlink 1.2s step-end infinite;
+  vertical-align: middle;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
+}
+
+/* Input Focus Bypasses Global Focus styles to stay clean */
+.terminal-input-field:focus {
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+/* Pulsing Status Dot */
+@keyframes dotPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.2); opacity: 0.5; }
+}
+.terminal-pulse-dot {
+  animation: dotPulse 2s ease-in-out infinite;
+}
+
+/* Push page content up when terminal is expanded */
+main {
+  transition: padding-bottom 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+body.terminal-expanded main {
+  padding-bottom: 300px;
+}
+@media (max-width: 1023px) {
+  body.terminal-expanded main {
+    padding-bottom: 340px; /* Account for mobile tab navigation overlay */
+  }
+}
+
+/* ============================================================
+   FLOOR MAP CATEGORY TABS
+   ============================================================ */
+#floor-map-tabs button {
+  transition: all 150ms ease;
+  font-weight: 500;
+  border: 1px solid transparent;
+}
+
+#floor-map-tabs button:not(.bg-primary) {
+  border-color: rgba(116, 120, 120, 0.15);
+}
+
+#floor-map-tabs button:not(.bg-primary):hover {
+  border-color: rgba(116, 120, 120, 0.3);
+}
+
+#floor-map-tabs button:active {
+  transform: scale(0.95);
+}
+
+

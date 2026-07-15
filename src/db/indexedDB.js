@@ -1,0 +1,428 @@
+/**
+ * IndexedDB Database Manager — TableCraft OS
+ * 
+ * Offline-first local database using the `idb` wrapper.
+ * All data is persisted locally and synced to Supabase via the sync engine.
+ */
+
+import { openDB } from 'idb';
+import { v4 as uuidv4 } from 'uuid';
+
+const DB_NAME = 'tablecraft-os';
+const DB_VERSION = 3;
+
+/** @type {import('idb').IDBPDatabase | null} */
+let db = null;
+
+// ─────────────────────────────────────────────
+// Database Initialization
+// ─────────────────────────────────────────────
+
+/**
+ * Opens (or upgrades) the IndexedDB database and returns the instance.
+ * Stores the instance in a module-level variable for reuse.
+ */
+export async function initDB() {
+  if (db) return db;
+
+  db = await openDB(DB_NAME, DB_VERSION, {
+    upgrade(database) {
+      // Tables store — restaurant floor tables
+      if (!database.objectStoreNames.contains('tables')) {
+        database.createObjectStore('tables', { keyPath: 'id' });
+      }
+
+      // Menu Items store
+      if (!database.objectStoreNames.contains('menuItems')) {
+        database.createObjectStore('menuItems', { keyPath: 'id' });
+      }
+
+      // Orders store — indexed by table_id for quick lookup
+      if (!database.objectStoreNames.contains('orders')) {
+        const orderStore = database.createObjectStore('orders', { keyPath: 'id' });
+        orderStore.createIndex('table_id', 'table_id', { unique: false });
+      }
+
+      // Order Items store — indexed by order_id
+      if (!database.objectStoreNames.contains('orderItems')) {
+        const orderItemStore = database.createObjectStore('orderItems', { keyPath: 'id' });
+        orderItemStore.createIndex('order_id', 'order_id', { unique: false });
+      }
+
+      // Transactions store — indexed by paid_at for date queries
+      if (!database.objectStoreNames.contains('transactions')) {
+        const txStore = database.createObjectStore('transactions', { keyPath: 'id' });
+        txStore.createIndex('paid_at', 'paid_at', { unique: false });
+      }
+
+      // Sync Queue — auto-incrementing key for FIFO processing
+      if (!database.objectStoreNames.contains('syncQueue')) {
+        database.createObjectStore('syncQueue', { keyPath: 'id', autoIncrement: true });
+      }
+
+      // Inventory store
+      if (!database.objectStoreNames.contains('inventory')) {
+        database.createObjectStore('inventory', { keyPath: 'id' });
+      }
+
+      // Waste store — indexed by wasted_at for date queries
+      if (!database.objectStoreNames.contains('waste')) {
+        const wasteStore = database.createObjectStore('waste', { keyPath: 'id' });
+        wasteStore.createIndex('wasted_at', 'wasted_at', { unique: false });
+      }
+
+      // Suppliers store
+      if (!database.objectStoreNames.contains('suppliers')) {
+        database.createObjectStore('suppliers', { keyPath: 'id' });
+      }
+
+      // Recipes store — indexed by menu_item_id
+      if (!database.objectStoreNames.contains('recipes')) {
+        const recipeStore = database.createObjectStore('recipes', { keyPath: 'id' });
+        recipeStore.createIndex('menu_item_id', 'menu_item_id', { unique: false });
+      }
+    },
+  });
+
+
+  return db;
+}
+
+/**
+ * Returns the current database instance.
+ * Throws if initDB() hasn't been called yet.
+ */
+export function getDB() {
+  if (!db) {
+    throw new Error('IndexedDB not initialized. Call initDB() first.');
+  }
+  return db;
+}
+
+// ─────────────────────────────────────────────
+// Tables CRUD
+// ─────────────────────────────────────────────
+
+/** Get all restaurant tables. */
+export async function getAllTables() {
+  const database = getDB();
+  return database.getAll('tables');
+}
+
+/** Get a single table by ID. */
+export async function getTable(id) {
+  const database = getDB();
+  return database.get('tables', id);
+}
+
+/** Insert or update a table record. */
+export async function upsertTable(table) {
+  const database = getDB();
+  await database.put('tables', table);
+}
+
+/** Delete a table by ID. */
+export async function deleteTable(id) {
+  const database = getDB();
+  await database.delete('tables', id);
+}
+
+// ─────────────────────────────────────────────
+// Menu Items CRUD
+// ─────────────────────────────────────────────
+
+/** Get all menu items. */
+export async function getAllMenuItems() {
+  const database = getDB();
+  return database.getAll('menuItems');
+}
+
+/** Add a menu item. Generates an ID if not provided. Returns the ID. */
+export async function addMenuItem(item) {
+  const database = getDB();
+  const record = { ...item, id: item.id || uuidv4() };
+  await database.put('menuItems', record);
+  return record.id;
+}
+
+/** Delete a menu item by ID. */
+export async function deleteMenuItem(id) {
+  const database = getDB();
+  await database.delete('menuItems', id);
+}
+
+// ─────────────────────────────────────────────
+// Orders CRUD
+// ─────────────────────────────────────────────
+
+/** Get a single order by ID. */
+export async function getOrder(id) {
+  const database = getDB();
+  return database.get('orders', id);
+}
+
+/**
+ * Find the open order for a given table.
+ * Uses the 'table_id' index and filters for status === 'open'.
+ */
+export async function getOrderByTable(tableId) {
+  const database = getDB();
+  const allForTable = await database.getAllFromIndex('orders', 'table_id', tableId);
+  return allForTable.find((order) => order.status === 'open') || null;
+}
+
+/** Create a new order (put). */
+export async function createOrder(order) {
+  const database = getDB();
+  const record = { ...order, id: order.id || uuidv4() };
+  await database.put('orders', record);
+}
+
+/** Update an existing order (put). */
+export async function updateOrder(order) {
+  const database = getDB();
+  await database.put('orders', order);
+}
+
+/** Delete an order by ID. */
+export async function deleteOrder(id) {
+  const database = getDB();
+  await database.delete('orders', id);
+}
+
+/** Get all orders. */
+export async function getAllOrders() {
+  const database = getDB();
+  return database.getAll('orders');
+}
+
+// ─────────────────────────────────────────────
+// Order Items CRUD
+// ─────────────────────────────────────────────
+
+/**
+ * Get all order items for a specific order.
+ * Uses the 'order_id' index.
+ */
+export async function getOrderItems(orderId) {
+  const database = getDB();
+  return database.getAllFromIndex('orderItems', 'order_id', orderId);
+}
+
+/** Add an order item (put). Generates ID if not provided. */
+export async function addOrderItem(item) {
+  const database = getDB();
+  const record = { ...item, id: item.id || uuidv4() };
+  await database.put('orderItems', record);
+}
+
+/** Remove an order item by ID. */
+export async function removeOrderItem(id) {
+  const database = getDB();
+  await database.delete('orderItems', id);
+}
+
+/** Update an existing order item (put). */
+export async function updateOrderItem(item) {
+  const database = getDB();
+  await database.put('orderItems', item);
+}
+
+// ─────────────────────────────────────────────
+// Transactions
+// ─────────────────────────────────────────────
+
+/** Get all transactions. */
+export async function getAllTransactions() {
+  const database = getDB();
+  return database.getAll('transactions');
+}
+
+/** Add a transaction record. Generates ID if not provided. */
+export async function addTransaction(tx) {
+  const database = getDB();
+  const record = { ...tx, id: tx.id || uuidv4() };
+  await database.put('transactions', record);
+}
+
+/**
+ * Get all transactions from today.
+ * Filters by comparing the date portion of paid_at to today's date.
+ */
+export async function getTodayTransactions() {
+  const database = getDB();
+  const all = await database.getAll('transactions');
+  const todayStr = new Date().toISOString().slice(0, 10); // 'YYYY-MM-DD'
+  return all.filter((tx) => {
+    if (!tx.paid_at) return false;
+    return tx.paid_at.slice(0, 10) === todayStr;
+  });
+}
+
+// ─────────────────────────────────────────────
+// Sync Queue
+// ─────────────────────────────────────────────
+
+/**
+ * Add an entry to the sync queue.
+ * @param {{ table: string, action: 'INSERT'|'UPDATE'|'DELETE', data: object, created_at: string }} entry
+ */
+export async function addToSyncQueue(entry) {
+  const database = getDB();
+  await database.add('syncQueue', entry);
+}
+
+/** Get all pending sync queue entries. */
+export async function getSyncQueue() {
+  const database = getDB();
+  return database.getAll('syncQueue');
+}
+
+/** Remove a single entry from the sync queue by ID. */
+export async function clearSyncQueueEntry(id) {
+  const database = getDB();
+  await database.delete('syncQueue', id);
+}
+
+/** Clear the entire sync queue. */
+export async function clearSyncQueue() {
+  const database = getDB();
+  await database.clear('syncQueue');
+}
+
+// ─────────────────────────────────────────────
+// Inventory CRUD
+// ─────────────────────────────────────────────
+
+/** Get all inventory items. */
+export async function getAllInventory() {
+  const database = getDB();
+  return database.getAll('inventory');
+}
+
+/** Insert or update an inventory item. */
+export async function upsertInventory(item) {
+  const database = getDB();
+  await database.put('inventory', item);
+}
+
+// ─────────────────────────────────────────────
+// Waste Log CRUD
+// ─────────────────────────────────────────────
+
+/** Get all waste logs. */
+export async function getAllWaste() {
+  const database = getDB();
+  return database.getAll('waste');
+}
+
+/** Log a waste item. Generates an ID if not provided. */
+export async function addWasteLog(log) {
+  const database = getDB();
+  const record = { ...log, id: log.id || uuidv4() };
+  await database.put('waste', record);
+  return record.id;
+}
+
+/**
+ * Get all waste logs from today.
+ */
+export async function getTodayWaste() {
+  const database = getDB();
+  const all = await database.getAll('waste');
+  const todayStr = new Date().toISOString().slice(0, 10);
+  return all.filter((w) => {
+    if (!w.wasted_at) return false;
+    return w.wasted_at.slice(0, 10) === todayStr;
+  });
+}
+
+// ─────────────────────────────────────────────
+// Suppliers CRUD
+// ─────────────────────────────────────────────
+
+/** Get all suppliers. */
+export async function getAllSuppliers() {
+  const database = getDB();
+  return database.getAll('suppliers');
+}
+
+/** Insert or update a supplier. */
+export async function upsertSupplier(supplier) {
+  const database = getDB();
+  const record = { ...supplier, id: supplier.id || uuidv4(), updated_at: new Date().toISOString() };
+  await database.put('suppliers', record);
+  return record;
+}
+
+/** Delete a supplier by ID. */
+export async function deleteSupplier(id) {
+  const database = getDB();
+  await database.delete('suppliers', id);
+}
+
+// ─────────────────────────────────────────────
+// Recipes CRUD
+// ─────────────────────────────────────────────
+
+/** Get all recipes. */
+export async function getAllRecipes() {
+  const database = getDB();
+  return database.getAll('recipes');
+}
+
+/** Get recipes for a specific menu item. */
+export async function getRecipesByMenuItem(menuItemId) {
+  const database = getDB();
+  return database.getAllFromIndex('recipes', 'menu_item_id', menuItemId);
+}
+
+/** Insert or update a recipe mapping. */
+export async function upsertRecipe(recipe) {
+  const database = getDB();
+  const record = { ...recipe, id: recipe.id || uuidv4(), updated_at: new Date().toISOString() };
+  await database.put('recipes', record);
+  return record;
+}
+
+/** Delete a recipe by ID. */
+export async function deleteRecipe(id) {
+  const database = getDB();
+  await database.delete('recipes', id);
+}
+
+// ─────────────────────────────────────────────
+// Inventory Depletion Helper
+// ─────────────────────────────────────────────
+
+/**
+ * Deducts stock from inventory based on recipe mappings of ordered items.
+ * Returns the list of updated inventory items to be queued for sync.
+ * @param {string} orderId
+ * @returns {Promise<Array<object>>}
+ */
+export async function deductInventoryForOrder(orderId) {
+  const database = getDB();
+  const orderItems = await getOrderItems(orderId);
+  const recipes = await getAllRecipes();
+  const inventory = await getAllInventory();
+  const updatedItems = [];
+
+  for (const item of orderItems) {
+    // Find recipes matching the item's menu_item_id
+    const itemRecipes = recipes.filter(r => r.menu_item_id === item.menu_item_id);
+    for (const recipe of itemRecipes) {
+      const invItem = inventory.find(inv => inv.id === recipe.ingredient_id);
+      if (invItem) {
+        const qtyToDeduct = Number(recipe.quantity) * Number(item.quantity);
+        invItem.current_stock = Number((Number(invItem.current_stock) - qtyToDeduct).toFixed(2));
+        invItem.updated_at = new Date().toISOString();
+        await database.put('inventory', invItem);
+        updatedItems.push(invItem);
+      }
+    }
+  }
+
+  return updatedItems;
+}
+
