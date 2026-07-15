@@ -227,11 +227,11 @@ export async function renderFloorMap() {
 
   grid.innerHTML = enrichedTables.map(table => {
     const isSelected = table.id === selectedTableId;
-    const selectRing = isSelected ? 'ring-4 ring-secondary border-secondary/60 scale-[1.02]' : '';
+    const selectRing = isSelected ? 'is-selected ring-4 ring-secondary border-secondary/60 scale-[1.02]' : '';
     
     if (table.status === 'available') {
       return `
-        <div class="group relative cursor-pointer border border-secondary/20 bg-secondary/5 p-md rounded-xl hover:bg-secondary/10 transition-all flex flex-col justify-between min-h-[110px] table-card-hover ${selectRing}" data-id="${table.id}">
+        <div class="group relative cursor-pointer border border-secondary/20 bg-secondary/5 p-md rounded-xl transition-all flex flex-col justify-between min-h-[110px] table-card-hover ${selectRing}" data-id="${table.id}">
           <div class="flex justify-between items-start">
             <span class="font-headline-md text-headline-md text-primary">${table.name}</span>
             <div class="flex flex-col items-end gap-1">
@@ -257,7 +257,8 @@ export async function renderFloorMap() {
           </div>
           <div>
             <p class="font-label-md text-on-surface-variant">Occupied</p>
-            <p class="font-mono-md text-mono-md font-bold text-primary">${formatPrice(table.total)} • ${table.itemCount} items</p>
+            <p class="font-body-md text-primary font-medium">${table.itemCount} items</p>
+            <p class="font-mono-md text-mono-md font-bold text-primary">${formatPrice(table.total)}</p>
           </div>
         </div>
       `;

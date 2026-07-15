@@ -360,7 +360,7 @@ export function renderBillingPanel() {
             </div>
             <div class="flex items-center gap-sm">
               <span class="font-mono-md font-bold text-primary">${formatPrice(item.price * item.quantity)}</span>
-              <button class="remove-item-btn w-6 h-6 rounded-full bg-error/10 text-error flex items-center justify-center opacity-0 group-hover:opacity-100 hover:!opacity-100 transition-opacity" data-remove-item-id="${item.id}" title="Reduce Quantity">
+              <button class="remove-item-btn w-6 h-6 rounded-full bg-error/10 text-error flex items-center justify-center opacity-100 lg:opacity-0 lg:group-hover:opacity-100 hover:!opacity-100 transition-opacity" data-remove-item-id="${item.id}" title="Reduce Quantity">
                 <span class="material-symbols-outlined text-[14px]">remove</span>
               </button>
             </div>

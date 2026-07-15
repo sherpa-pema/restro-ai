@@ -8,6 +8,7 @@ export default defineConfig({
   root: '.',
   server: {
     port: 3000,
+    host: true,
     open: true,
     proxy: {
       '/ai': {

@@ -148,11 +148,6 @@ body {
   transition: transform 150ms ease, box-shadow 150ms ease;
 }
 
-.table-card-hover:hover {
-  transform: scale(1.03);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
-}
-
 .table-card-hover:active {
   transform: scale(0.98);
 }
@@ -344,6 +339,27 @@ body.terminal-expanded main {
 
 #floor-map-tabs button:active {
   transform: scale(0.95);
+}
+
+/* ============================================================
+   MOBILE INTERACTION & ACCESSIBILITY FIXES
+   ============================================================ */
+
+@media (max-width: 1023px) {
+  /* Prevent invisible delete buttons from intercepting touches on mobile */
+  .delete-table-btn {
+    opacity: 0 !important;
+    pointer-events: none !important;
+  }
+  .is-selected .delete-table-btn {
+    opacity: 1 !important;
+    pointer-events: auto !important;
+  }
+  
+  /* Hide delete menu button on mobile/touch screens to avoid accidental deletion */
+  .delete-menu-btn {
+    display: none !important;
+  }
 }
 
 
