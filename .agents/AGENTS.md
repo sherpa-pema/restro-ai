@@ -15,3 +15,5 @@
 ## Continuous Learning
 * **Document Mistakes:** Every time a mistake is made and the code is subsequently fixed, you MUST document the lesson learned into this `AGENTS.md` file as a new rule so that future agents do not repeat the same mistake.
 
+## Git Operations
+* **Pushing Commits:** When the user requests to "commit to git" or "push to git", this implicitly means to both commit the changes locally AND push them to the configured remote repository (`git push`). Always push after committing unless explicitly instructed otherwise.
