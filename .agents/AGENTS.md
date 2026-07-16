@@ -3,7 +3,7 @@
 ## Graphify Integration & Codebase Mapping
 1. Before starting any complex coding or planning task, they must read `graphify-out/GRAPH_REPORT.md` to understand the codebase layout.
 2. You must never manually edit the files inside the `graphify-out/` directory.
-3. only when user prompts to update graphify then update graphify
+3. when user prompts to update graphify automatically run `graphify update .` using the terminal tool to keep the local graph in sync.
 
 ## UI Testing Policy
 * If a UI component has been modified, **Do NOT launch automated browser agents** or browser-based testing tools (like Puppeteer, Playwright, or Chrome DevTools subagents) under any circumstances unless explicitly commanded.

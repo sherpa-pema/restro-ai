@@ -261,10 +261,12 @@ export async function pushInventory(item) {
     const dbItem = {
       id: item.id,
       ingredient_name: item.ingredient_name,
+      category: item.category || 'General',
       current_stock: item.current_stock,
       unit: item.unit,
       reorder_threshold: item.reorder_threshold,
       unit_cost: item.unit_cost,
+      supplier_id: item.supplier_id || null,
       updated_at: item.updated_at
     };
     const { error } = await supabase
