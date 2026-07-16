@@ -263,10 +263,10 @@ export async function pullAllFromCloud() {
       const localTables = await getAllTables();
       
       for (const table of cloudTables) {
-        // Find if local table with same name exists
-        const localMatch = localTables.find(t => t.name === table.name);
+        // Find all local tables with same name but different ID
+        const localMatches = localTables.filter(t => t.name === table.name && t.id !== table.id);
         
-        if (localMatch && localMatch.id !== table.id) {
+        for (const localMatch of localMatches) {
           console.log(`[SyncEngine] Aligning table ${table.name} ID: ${localMatch.id} -> ${table.id}`);
           
           // Delete old local record
@@ -305,9 +305,9 @@ export async function pullAllFromCloud() {
       const localMenu = await getAllMenuItems();
       
       for (const item of cloudMenuItems) {
-        const localMatch = localMenu.find(m => m.name === item.name);
+        const localMatches = localMenu.filter(m => m.name === item.name && m.id !== item.id);
         
-        if (localMatch && localMatch.id !== item.id) {
+        for (const localMatch of localMatches) {
           console.log(`[SyncEngine] Aligning menu item "${item.name}" ID: ${localMatch.id} -> ${item.id}`);
           await deleteMenuItem(localMatch.id);
         }
