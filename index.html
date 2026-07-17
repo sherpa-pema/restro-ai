@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
   <title>TableCraft OS | Dashboard</title>
   <meta name="description" content="TableCraft OS — AI-powered restaurant POS and management system. Manage tables, orders, billing, and analytics from a single dashboard.">
 
@@ -218,7 +218,7 @@
   </nav>
 
   <!-- Main Content -->
-  <main class="pb-20 lg:pb-margin px-4 lg:px-margin lg:ml-64 pt-16 lg:pt-8">
+  <main class="pb-[140px] lg:pb-margin px-4 lg:px-margin lg:ml-64 pt-16 lg:pt-8">
     <div class="w-full max-w-[1600px] mx-auto">
 
       <!-- PAGE: Overview (Revenue Dashboard) -->
@@ -360,6 +360,26 @@
                 <button id="btn-add-table" class="ml-4 w-8 h-8 rounded-full bg-surface-container border border-outline-variant flex items-center justify-center text-on-surface-variant hover:bg-surface-variant hover:text-primary transition-all" title="Add Table">
                   <span class="material-symbols-outlined text-[18px]">add</span>
                 </button>
+                <div class="relative inline-block text-left" id="takeaway-dropdown-container">
+                  <button id="btn-takeaway" class="ml-2 h-8 px-3 rounded-full bg-secondary text-on-primary flex items-center justify-center text-label-md hover:opacity-90 transition-all font-bold" title="New Takeaway">
+                    <span class="material-symbols-outlined text-[16px] mr-1">shopping_bag</span>
+                    + Takeaway
+                  </button>
+                  <div id="takeaway-dropdown" class="hidden absolute right-0 mt-1 w-40 bg-surface-container-lowest border border-outline-variant rounded-xl shadow-lg z-[99] py-1">
+                    <button class="w-full text-left px-4 py-2 hover:bg-surface-container text-body-md text-primary flex items-center gap-2" data-channel="Regular">
+                      <span class="material-symbols-outlined text-[16px] text-secondary">shopping_bag</span> Regular
+                    </button>
+                    <button class="w-full text-left px-4 py-2 hover:bg-surface-container text-body-md text-primary flex items-center gap-2" data-channel="Foodmandu">
+                      <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> Foodmandu
+                    </button>
+                    <button class="w-full text-left px-4 py-2 hover:bg-surface-container text-body-md text-primary flex items-center gap-2" data-channel="Pathao">
+                      <span class="w-2.5 h-2.5 rounded-full bg-red-500"></span> Pathao
+                    </button>
+                    <button class="w-full text-left px-4 py-2 hover:bg-surface-container text-body-md text-primary flex items-center gap-2" data-channel="BhojDeals">
+                      <span class="w-2.5 h-2.5 rounded-full bg-orange-500"></span> BhojDeals
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
             <div id="floor-map-tabs" class="flex flex-wrap gap-2 mb-md border-b border-outline-variant pb-3">
@@ -408,7 +428,7 @@
 
         <!-- Right Column: Billing -->
         <div class="w-full xl:w-[380px] flex flex-col gap-lg">
-          <section id="billing-section" class="bg-surface-container-lowest p-lg rounded-xl border border-outline-variant shadow-lg sticky top-8">
+          <section id="billing-section" class="bg-surface-container-lowest p-lg rounded-xl border border-outline-variant shadow-lg xl:sticky xl:top-8">
             <div class="flex justify-between items-center mb-lg">
               <div>
                 <h2 class="font-headline-xl text-headline-xl text-primary tracking-tight">Billing — <span id="billing-table-name">Select Table</span></h2>
@@ -422,14 +442,9 @@
             </div>
             <!-- Order content (hidden until table selected) -->
             <div id="billing-content" class="hidden">
-              <div class="mb-md">
-                <label class="text-[10px] font-label-md text-on-surface-variant uppercase tracking-widest block mb-1">Order Channel</label>
-                <select id="billing-channel" class="w-full h-10 px-3 bg-surface-container border border-outline-variant rounded-lg text-body-md focus:outline-none focus:border-primary">
-                  <option value="Dine-in">Dine-in</option>
-                  <option value="Takeout">Takeout</option>
-                  <option value="Foodmandu">Foodmandu (App)</option>
-                  <option value="PathaoFood">PathaoFood (App)</option>
-                </select>
+              <div class="mb-md flex justify-between items-center bg-surface-container p-2.5 rounded-lg border border-outline-variant/30">
+                <span class="text-[10px] font-label-md text-on-surface-variant uppercase tracking-widest">Order Channel</span>
+                <span id="billing-channel-display" class="font-label-md text-[11px] font-bold text-primary bg-white/60 dark:bg-black/20 px-2 py-0.5 rounded-md border border-outline-variant/30">Dine-in</span>
               </div>
               <div id="billing-items" class="flex flex-col gap-md mb-xl max-h-[250px] overflow-y-auto custom-scrollbar">
                 <!-- JS renders order items here -->
@@ -439,6 +454,10 @@
                 <div class="flex justify-between items-center">
                   <span class="text-on-surface-variant font-body-md text-body-md">Subtotal</span>
                   <span id="billing-subtotal" class="font-mono-md text-primary">0.00</span>
+                </div>
+                <div class="flex justify-between items-center my-1 gap-2">
+                  <span class="text-on-surface-variant font-body-md text-body-md">Discount (%)</span>
+                  <input id="billing-discount-input" type="number" placeholder="0" class="w-16 h-7 text-right px-2 py-0 bg-surface-container border border-outline-variant rounded-md text-body-md focus:outline-none focus:border-primary font-mono-md" min="0" max="100">
                 </div>
                 <div class="flex justify-between items-center">
                   <span class="text-on-surface-variant font-body-md text-body-md">VAT 10%</span>
@@ -688,52 +707,57 @@
     </div>
   </div>
 
-  <!-- Terminal-Style Command Console -->
-  <div id="terminal-console" class="fixed bottom-0 left-0 lg:left-64 right-0 z-40 bg-slate-950/95 border-t border-emerald-500/30 text-emerald-400 font-mono shadow-[0_-8px_30px_rgba(0,0,0,0.5)] transition-all duration-300 h-[44px] flex flex-col">
-    <!-- Terminal Header (Clickable to toggle collapse/expand) -->
-    <div id="terminal-header" class="h-[44px] flex items-center justify-between px-4 border-b border-slate-900 cursor-pointer select-none bg-slate-900/60">
-      <div class="flex items-center gap-3">
-        <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 terminal-pulse-dot shadow-[0_0_8px_#10b981]"></span>
-        <span class="text-xs font-semibold tracking-wide text-slate-200">guest@tc-os: ~/console</span>
-        <span class="hidden md:inline text-[10px] text-emerald-500/60 bg-emerald-950/30 px-2 py-0.5 rounded border border-emerald-500/20 uppercase tracking-widest font-bold">Cerebras AI Online</span>
+  <!-- Floating Chat Bubble Bar -->
+  <div id="terminal-console" class="fixed bottom-20 lg:bottom-6 left-1/2 -translate-x-1/2 lg:left-[calc(50%+128px)] z-40 bg-slate-900/90 backdrop-blur-md border border-slate-800 text-slate-100 shadow-[0_8px_32px_rgba(0,0,0,0.5)] transition-all duration-300 h-[56px] rounded-full w-[calc(100%-32px)] max-w-[600px] flex flex-col overflow-hidden">
+    <!-- Chat Header (Visible when expanded) -->
+    <div id="terminal-header" class="h-[44px] min-h-[44px] flex items-center justify-between px-4 border-b border-slate-800/60 cursor-pointer select-none bg-slate-900/40 hidden">
+      <div class="flex items-center gap-2">
+        <span class="w-2 h-2 rounded-full bg-emerald-500 terminal-pulse-dot shadow-[0_0_8px_#10b981]"></span>
+        <span class="text-[11px] font-semibold text-slate-300">TableCraft Assistant</span>
+        <span class="text-[9px] text-emerald-400 bg-emerald-950/40 px-1.5 py-0.5 rounded border border-emerald-500/20 uppercase tracking-widest font-bold font-mono">Cerebras AI</span>
       </div>
-      <div class="flex items-center gap-4 text-slate-400 text-xs">
-        <span class="hidden lg:inline text-[11px] text-slate-500">Press <kbd class="bg-slate-800 text-slate-300 px-1 rounded text-[10px]">~</kbd> or <kbd class="bg-slate-800 text-slate-300 px-1 rounded text-[10px]">Ctrl+K</kbd> to toggle</span>
-        <button id="btn-terminal-clear" class="flex items-center justify-center hover:text-emerald-400 p-1 transition-colors" title="Clear Console">
+      <div class="flex items-center gap-3 text-slate-400 text-xs">
+        <button id="btn-terminal-clear" class="flex items-center justify-center hover:text-slate-200 p-1 transition-colors" title="Clear History">
           <span class="material-symbols-outlined text-[16px]">clear_all</span>
         </button>
-        <button id="btn-terminal-mic" class="flex items-center justify-center hover:text-emerald-400 p-1 transition-colors" title="Voice command">
-          <span class="material-symbols-outlined text-[16px]">mic</span>
-        </button>
-        <button id="btn-terminal-toggle" class="flex items-center justify-center hover:text-emerald-400 transition-colors" title="Expand/Collapse">
-          <span id="terminal-toggle-icon" class="material-symbols-outlined text-[20px]">expand_less</span>
+        <button id="btn-terminal-toggle" class="flex items-center justify-center hover:text-slate-200 transition-colors" title="Collapse">
+          <span id="terminal-toggle-icon" class="material-symbols-outlined text-[20px]">keyboard_arrow_down</span>
         </button>
       </div>
     </div>
 
-    <!-- Terminal Body (Scrollable Output Logs) -->
-    <div id="terminal-body" class="flex-1 overflow-y-auto px-4 py-3 text-xs leading-relaxed space-y-1.5 terminal-scrollbar hidden">
-      <div class="text-emerald-500/60 font-medium">TableCraft OS Virtual Console [Version 1.0.0]</div>
-      <div class="text-emerald-500/60 font-medium mb-2">Type a command below. Try "Add 2 chicken burgers to table 3" or "status".</div>
+    <!-- Chat History / Console Logs (Visible when expanded) -->
+    <div id="terminal-body" class="flex-1 overflow-y-auto px-4 py-3 text-xs leading-relaxed space-y-2.5 terminal-scrollbar hidden bg-slate-950/20">
+      <div class="flex flex-col items-start mb-3">
+        <div class="max-w-[85%] bg-emerald-950/40 border border-emerald-500/20 text-emerald-300 rounded-2xl rounded-tl-none px-3 py-2 text-xs shadow-sm leading-relaxed">
+          Hello! I am your TableCraft Assistant. How can I help you manage the restaurant today? Try: "Add 2 chicken burgers to table 3" or "status".
+        </div>
+      </div>
     </div>
 
-    <!-- Terminal Prompt Line (Active Input Area) -->
-    <div id="terminal-prompt-line" class="h-[44px] min-h-[44px] flex items-center px-4 border-t border-slate-900/60 bg-slate-950/40">
-      <span class="text-emerald-400 font-bold text-xs mr-2 select-none">guest@tc-os:~$</span>
+    <!-- Chat Prompt Line (Always visible at the bottom) -->
+    <div id="terminal-prompt-line" class="h-[56px] min-h-[56px] flex items-center px-4 bg-transparent">
+      <!-- AI Sparkle Icon -->
+      <span class="material-symbols-outlined text-emerald-400 mr-3 select-none animate-pulse text-[20px]">auto_awesome</span>
       <div class="flex-1 flex items-center relative">
-        <input id="terminal-input" type="text" placeholder='Type a command or press Tab/Up for history...' class="terminal-input-field flex-1 bg-transparent text-emerald-300 border-none outline-none font-mono text-xs p-0 focus:ring-0 placeholder:text-emerald-800" autocomplete="off">
+        <input id="terminal-input" type="text" placeholder=" What can i do for you ? " class="terminal-input-field flex-1 bg-transparent text-slate-100 border-none outline-none text-sm p-0 focus:ring-0 placeholder:text-slate-500" autocomplete="off">
         <span id="terminal-cursor-indicator" class="terminal-cursor hidden"></span>
       </div>
-      <button id="btn-terminal-send" class="text-emerald-500 hover:text-emerald-300 flex items-center justify-center p-1 transition-colors ml-2" title="Run command">
-        <span class="material-symbols-outlined text-[18px]">send</span>
-      </button>
+      <div class="flex items-center gap-2">
+        <button id="btn-terminal-mic" class="text-slate-400 hover:text-emerald-400 flex items-center justify-center p-1.5 transition-colors rounded-full hover:bg-slate-800/50" title="Voice command">
+          <span class="material-symbols-outlined text-[20px]">mic</span>
+        </button>
+        <button id="btn-terminal-send" class="text-emerald-400 hover:text-emerald-300 flex items-center justify-center p-1.5 transition-colors rounded-full hover:bg-slate-800/50" title="Send message">
+          <span class="material-symbols-outlined text-[20px]">send</span>
+        </button>
+      </div>
     </div>
   </div>
 
   <!-- Add Table Modal -->
   <div id="add-table-modal" class="fixed inset-0 z-[100] hidden">
     <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" id="add-table-overlay"></div>
-    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[340px]">
+    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[95%] max-w-[340px]">
       <div class="bg-surface-container-lowest rounded-2xl border border-outline-variant shadow-2xl p-lg">
         <h3 class="font-headline-lg text-headline-lg text-primary mb-lg">Add New Table</h3>
         <div class="flex flex-col gap-md">
@@ -766,7 +790,7 @@
   <!-- Log Waste Modal -->
   <div id="log-waste-modal" class="fixed inset-0 z-[100] hidden">
     <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" id="log-waste-overlay"></div>
-    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[340px]">
+    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[95%] max-w-[340px]">
       <div class="bg-surface-container-lowest rounded-2xl border border-outline-variant shadow-2xl p-lg">
         <h3 class="font-headline-lg text-headline-lg text-primary mb-lg">Log Wasted Stock</h3>
         <div class="flex flex-col gap-md">
@@ -799,7 +823,7 @@
   <!-- Modal: Add/Edit Inventory Item -->
   <div id="add-inventory-modal" class="fixed inset-0 z-[100] hidden">
     <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" id="add-inventory-overlay"></div>
-    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[380px]">
+    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[95%] max-w-[380px]">
       <div class="bg-surface-container-lowest rounded-2xl border border-outline-variant shadow-2xl p-lg">
         <h3 id="inventory-modal-title" class="font-headline-lg text-headline-lg text-primary mb-lg font-bold">Add New Ingredient</h3>
         <div class="flex flex-col gap-md">
@@ -858,7 +882,7 @@
   <!-- Modal: Stock In (Receiving) -->
   <div id="stock-in-modal" class="fixed inset-0 z-[100] hidden">
     <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" id="stock-in-overlay"></div>
-    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[340px]">
+    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[95%] max-w-[340px]">
       <div class="bg-surface-container-lowest rounded-2xl border border-outline-variant shadow-2xl p-lg">
         <h3 class="font-headline-lg text-headline-lg text-primary mb-lg font-bold">Stock In (Receiving)</h3>
         <div class="flex flex-col gap-md">
@@ -893,7 +917,7 @@
   <!-- Modal: Manual Reconciliation Override -->
   <div id="reconcile-modal" class="fixed inset-0 z-[100] hidden">
     <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" id="reconcile-overlay"></div>
-    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[340px]">
+    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[95%] max-w-[340px]">
       <div class="bg-surface-container-lowest rounded-2xl border border-outline-variant shadow-2xl p-lg">
         <h3 class="font-headline-lg text-headline-lg text-primary mb-lg font-bold">Physical Reconciliation</h3>
         <div class="flex flex-col gap-md">
@@ -923,7 +947,7 @@
   <!-- Modal: Add/Edit Supplier -->
   <div id="add-supplier-modal" class="fixed inset-0 z-[100] hidden">
     <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" id="add-supplier-overlay"></div>
-    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[360px]">
+    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[95%] max-w-[360px]">
       <div class="bg-surface-container-lowest rounded-2xl border border-outline-variant shadow-2xl p-lg">
         <h3 id="supplier-modal-title" class="font-headline-lg text-headline-lg text-primary mb-lg font-bold">Add Supplier Profile</h3>
         <div class="flex flex-col gap-md">

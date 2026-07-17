@@ -1,6 +1,7 @@
 // Terminal-Style Command Console Module for TableCraft OS
 
 import { getState } from '../state.js';
+import { getOrderByTable, getOrderItems } from '../db/indexedDB.js';
 import { parseCommandWithAI } from '../ai/cerebras.js';
 import { parseCommandWithRegex } from '../ai/regexParser.js';
 import { executeCommand } from '../ai/commandExecutor.js';
@@ -28,10 +29,17 @@ export function initCommandBar() {
   // Toggle handlers
   const expandConsole = () => {
     isExpanded = true;
-    consoleEl.classList.remove('h-[44px]');
-    consoleEl.classList.add('h-[300px]', 'shadow-[0_-12px_40px_rgba(16,185,129,0.15)]');
+    consoleEl.classList.remove('h-[56px]', 'rounded-full', 'shadow-[0_8px_32px_rgba(0,0,0,0.5)]');
+    consoleEl.classList.add('h-[60vh]', 'sm:h-[400px]', 'max-h-[400px]', 'rounded-2xl', 'shadow-[0_12px_40px_rgba(0,0,0,0.6)]');
+    if (headerEl) headerEl.classList.remove('hidden');
     bodyEl.classList.remove('hidden');
-    if (toggleIcon) toggleIcon.innerText = 'expand_more';
+
+    const promptLineEl = document.getElementById('terminal-prompt-line');
+    if (promptLineEl) {
+      promptLineEl.classList.add('border-t', 'border-slate-800');
+    }
+
+    if (toggleIcon) toggleIcon.innerText = 'keyboard_arrow_down';
     document.body.classList.add('terminal-expanded');
     bodyEl.scrollTop = bodyEl.scrollHeight;
     inputEl.focus();
@@ -39,10 +47,17 @@ export function initCommandBar() {
 
   const collapseConsole = () => {
     isExpanded = false;
-    consoleEl.classList.remove('h-[300px]', 'shadow-[0_-12px_40px_rgba(16,185,129,0.15)]');
-    consoleEl.classList.add('h-[44px]');
+    consoleEl.classList.remove('h-[60vh]', 'sm:h-[400px]', 'max-h-[400px]', 'rounded-2xl', 'shadow-[0_12px_40px_rgba(0,0,0,0.6)]');
+    consoleEl.classList.add('h-[56px]', 'rounded-full', 'shadow-[0_8px_32px_rgba(0,0,0,0.5)]');
+    if (headerEl) headerEl.classList.add('hidden');
     bodyEl.classList.add('hidden');
-    if (toggleIcon) toggleIcon.innerText = 'expand_less';
+
+    const promptLineEl = document.getElementById('terminal-prompt-line');
+    if (promptLineEl) {
+      promptLineEl.classList.remove('border-t', 'border-slate-800');
+    }
+
+    if (toggleIcon) toggleIcon.innerText = 'keyboard_arrow_up';
     document.body.classList.remove('terminal-expanded');
   };
 
@@ -54,23 +69,46 @@ export function initCommandBar() {
     }
   };
 
-  // Header click toggles console (excluding clear/mic buttons)
+  // Header click toggles console (excluding clear button)
   if (headerEl) {
     headerEl.addEventListener('click', (e) => {
-      if (e.target.closest('#btn-terminal-clear') || e.target.closest('#btn-terminal-mic')) {
+      if (e.target.closest('#btn-terminal-clear')) {
         return;
       }
       toggleConsole();
     });
   }
 
+  // Prompt line and input click/focus handlers to expand console
+  const promptLineEl = document.getElementById('terminal-prompt-line');
+  if (promptLineEl) {
+    promptLineEl.addEventListener('click', (e) => {
+      if (e.target.closest('#btn-terminal-mic') || e.target.closest('#btn-terminal-send')) {
+        return;
+      }
+      if (!isExpanded) {
+        expandConsole();
+      }
+      inputEl.focus();
+    });
+  }
+
+  inputEl.addEventListener('focus', () => {
+    if (!isExpanded) {
+      expandConsole();
+    }
+  });
+
   // Clear console log buffer
   if (btnClear) {
     btnClear.addEventListener('click', () => {
       if (bodyEl) {
         bodyEl.innerHTML = `
-          <div class="text-emerald-500/60 font-medium">Console buffer cleared.</div>
-          <div class="text-emerald-500/60 font-medium mb-2">Type a command below. Try "Add 2 chicken burgers to table 3" or "status".</div>
+          <div class="flex flex-col items-start mb-3">
+            <div class="max-w-[85%] bg-slate-800/60 border border-slate-700/50 text-slate-400 rounded-2xl rounded-tl-none px-3 py-2 text-[11px] italic">
+              History cleared. Type a command below. Try "Add 2 chicken burgers to table 3" or "status".
+            </div>
+          </div>
         `;
         showToast('Console history cleared', 'info');
       }
@@ -79,41 +117,44 @@ export function initCommandBar() {
 
   // Print helper for terminal output
   const printToConsole = (text, type = 'info') => {
+    // Route internal system and AI parsing details to browser console log
+    if (type === 'ai' || type === 'system') {
+      console.log(`[Assistant System Log] (${type}):`, text);
+      return;
+    }
+
     if (!bodyEl) return;
     const line = document.createElement('div');
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     
-    let typeClass = 'text-slate-300';
-    let prefix = '';
-    
-    switch (type) {
-      case 'cmd':
-        typeClass = 'text-emerald-400 font-bold';
-        prefix = 'guest@tc-os:~$ ';
-        break;
-      case 'success':
-        typeClass = 'text-emerald-500 font-semibold';
-        prefix = '[ OK ] ';
-        break;
-      case 'error':
-        typeClass = 'text-rose-500 font-semibold';
-        prefix = '[ERR] ';
-        break;
-      case 'ai':
-        typeClass = 'text-cyan-400';
-        prefix = '[ AI ] ';
-        break;
-      case 'system':
-        typeClass = 'text-slate-500 italic';
-        prefix = '[SYS] ';
-        break;
+    if (type === 'cmd') {
+      // User message - Right aligned bubble
+      line.className = "flex flex-col items-end mb-3";
+      line.innerHTML = `
+        <div class="max-w-[85%] bg-slate-800 text-slate-100 rounded-2xl rounded-tr-none px-3 py-2 text-xs shadow-sm leading-relaxed whitespace-pre-wrap">
+          ${escapeHTML(text)}
+        </div>
+        <span class="text-[9px] text-slate-500 mt-1 mr-1">${time}</span>
+      `;
+    } else if (type === 'error') {
+      // Error message - Left aligned rose bubble
+      line.className = "flex flex-col items-start mb-3";
+      line.innerHTML = `
+        <div class="max-w-[85%] bg-rose-950/40 border border-rose-500/20 text-rose-300 rounded-2xl rounded-tl-none px-3 py-2 text-xs shadow-sm leading-relaxed whitespace-pre-wrap">
+          ${escapeHTML(text)}
+        </div>
+        <span class="text-[9px] text-slate-500 mt-1 ml-1">${time}</span>
+      `;
+    } else {
+      // Assistant success / info message - Left aligned emerald bubble
+      line.className = "flex flex-col items-start mb-3";
+      line.innerHTML = `
+        <div class="max-w-[85%] bg-emerald-950/40 border border-emerald-500/20 text-emerald-300 rounded-2xl rounded-tl-none px-3 py-2 text-xs shadow-sm leading-relaxed whitespace-pre-wrap">
+          ${escapeHTML(text)}
+        </div>
+        <span class="text-[9px] text-slate-500 mt-1 ml-1">${time}</span>
+      `;
     }
-
-    line.className = `flex gap-2 py-0.5 text-xs font-mono ${typeClass}`;
-    line.innerHTML = `
-      <span class="text-slate-600 select-none">${time}</span>
-      <span class="flex-1 whitespace-pre-wrap">${prefix}${escapeHTML(text)}</span>
-    `;
     
     bodyEl.appendChild(line);
     bodyEl.scrollTop = bodyEl.scrollHeight;
@@ -154,8 +195,56 @@ export function initCommandBar() {
     printToConsole('Dispatching parser to Cerebras Cloud...', 'ai');
 
     try {
-      const menuItems = getState().menuItems || [];
-      let intent = await parseCommandWithAI(commandText, menuItems);
+      const state = getState();
+      const menuItems = state.menuItems || [];
+
+      // Compile table context (including open order items)
+      const tablesContext = [];
+      for (const t of (state.tables || [])) {
+        const openOrder = (state.orders || []).find(o => o.table_id === t.id && o.status === 'open');
+        let itemsSummary = [];
+        if (openOrder) {
+          try {
+            const items = await getOrderItems(openOrder.id);
+            itemsSummary = items.map(i => `${i.quantity}x ${i.name}`);
+          } catch (e) {
+            console.error(e);
+          }
+        }
+        tablesContext.push({
+          name: t.name,
+          status: t.status,
+          seats: t.seats,
+          order_total: openOrder ? openOrder.total : 0,
+          items: itemsSummary
+        });
+      }
+
+      // Compile low stock items
+      const lowStockContext = (state.inventory || [])
+        .filter(item => Number(item.current_stock) < Number(item.reorder_threshold))
+        .map(item => ({
+          name: item.ingredient_name,
+          stock: Number(item.current_stock),
+          threshold: Number(item.reorder_threshold),
+          unit: item.unit
+        }));
+
+      // Compile today's revenue
+      const todayTx = state.transactions || [];
+      const totalRevenue = todayTx.reduce((sum, tx) => sum + (tx.amount || 0), 0);
+
+      const context = {
+        tables: tablesContext,
+        low_stock_ingredients: lowStockContext,
+        today_revenue: {
+          total: totalRevenue,
+          currency: state.currency || 'NPR',
+          transactions_count: todayTx.length
+        }
+      };
+
+      let intent = await parseCommandWithAI(commandText, menuItems, context);
       let isRegexFallback = false;
 
       // Local Regex fallback if AI returns UNKNOWN or matches command keywords when chat mode active
@@ -262,55 +351,76 @@ export function initCommandBar() {
 
   if (btnSend) btnSend.addEventListener('click', submitCommand);
 
-  // Speech Recognition API Integration
+  // Speech Input Integration using Browser's Native SpeechRecognition API
   if (btnMic) {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    
-    if (!SpeechRecognition) {
-      btnMic.addEventListener('click', () => {
-        showToast('Speech recognition is not supported in this browser.', 'error');
-        printToConsole('Speech recognition is not supported in this browser.', 'error');
-      });
-    } else {
-      const recognition = new SpeechRecognition();
+    let recognition = null;
+    let isListening = false;
+    let originalPlaceholder = inputEl.placeholder || '';
+
+    if (SpeechRecognition) {
+      recognition = new SpeechRecognition();
       recognition.continuous = false;
-      recognition.lang = 'en-US';
       recognition.interimResults = false;
+      recognition.lang = 'en-US';
 
-      let isListening = false;
-
-      recognition.onstart = () => {
+      recognition.addEventListener('start', () => {
         isListening = true;
-        btnMic.innerHTML = '<span class="material-symbols-outlined text-rose-500 animate-pulse text-[16px]">mic_off</span>';
+        btnMic.innerHTML = '<span class="material-symbols-outlined text-rose-500 animate-pulse text-[20px]">mic_off</span>';
+        inputEl.placeholder = 'Listening... Speak now.';
         printToConsole('Console microphone active. Listening...', 'system');
         showToast('Listening... Speak now', 'info');
-      };
+      });
 
-      recognition.onresult = (event) => {
-        const transcript = event.results[0][0].transcript;
-        inputEl.value = transcript;
-        printToConsole(`Microphone input transcribed: "${transcript}"`, 'system');
-        if (!isExpanded) expandConsole();
-        inputEl.focus();
-      };
+      recognition.addEventListener('result', (event) => {
+        const transcript = event.results[0][0].transcript.trim();
+        if (transcript) {
+          inputEl.value = transcript;
+          printToConsole(`Microphone input transcribed: "${transcript}"`, 'system');
+          if (!isExpanded) expandConsole();
+          inputEl.focus();
+        } else {
+          showToast('Could not hear anything clearly', 'warning');
+        }
+      });
 
-      recognition.onerror = (event) => {
-        console.error('Speech recognition error:', event.error);
-        printToConsole(`Microphone capture error: ${event.error}`, 'error');
-        showToast(`Voice error: ${event.error}`, 'error');
-      };
-
-      recognition.onend = () => {
+      recognition.addEventListener('end', () => {
         isListening = false;
-        btnMic.innerHTML = '<span class="material-symbols-outlined text-[16px]">mic</span>';
-      };
+        btnMic.innerHTML = '<span class="material-symbols-outlined text-[20px]">mic</span>';
+        inputEl.placeholder = originalPlaceholder;
+      });
+
+      recognition.addEventListener('error', (event) => {
+        console.error('Speech recognition error:', event.error);
+        let errorMsg = 'Could not access microphone or recognize speech.';
+        if (event.error === 'not-allowed') {
+          errorMsg = 'Microphone permission denied. Please enable mic access in your browser settings.';
+        } else if (event.error === 'no-speech') {
+          errorMsg = 'No speech was detected. Please try again.';
+          showToast(errorMsg, 'warning');
+          printToConsole(`Microphone: ${errorMsg}`, 'warning');
+          return;
+        } else if (event.error === 'network') {
+          errorMsg = 'Network error during speech recognition.';
+        }
+        showToast(errorMsg, 'error');
+        printToConsole(`Microphone error: ${errorMsg}`, 'error');
+      });
 
       btnMic.addEventListener('click', () => {
         if (isListening) {
           recognition.stop();
         } else {
-          recognition.start();
+          try {
+            recognition.start();
+          } catch (err) {
+            console.error('Failed to start recognition:', err);
+          }
         }
+      });
+    } else {
+      btnMic.addEventListener('click', () => {
+        showToast('Speech recognition not supported in this browser. Please use Chrome, Edge, or Safari.', 'error');
       });
     }
   }

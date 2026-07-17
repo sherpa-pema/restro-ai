@@ -1,7 +1,7 @@
 // Menu Management Panel Module for TableCraft OS
 
 import { getState, setState, on, formatPrice } from '../state.js';
-import { getAllTables, getTable, upsertTable, getAllMenuItems, addMenuItem, deleteMenuItem, getOrderByTable, createOrder, updateOrder, getOrderItems, addOrderItem, updateOrderItem } from '../db/indexedDB.js';
+import { getAllTables, getTable, upsertTable, getAllMenuItems, addMenuItem, deleteMenuItem, getOrderByTable, createOrder, updateOrder, getOrderItems, addOrderItem, updateOrderItem, isTakeawayTable, getChannelFromTableName } from '../db/indexedDB.js';
 import { queueSync } from '../db/syncEngine.js';
 import { showToast } from './toasts.js';
 import { v4 as uuidv4 } from 'uuid';
@@ -185,10 +185,21 @@ async function addItemToTable(menuItem) {
     if (!order) {
       isNewOrder = true;
       const orderId = uuidv4();
+      
+      let orderChannel = 'Dine-in';
+      if (isTakeawayTable(table)) {
+        const channel = table.channel || getChannelFromTableName(table.name);
+        if (channel === 'Regular') orderChannel = 'Takeout';
+        else if (channel === 'Foodmandu') orderChannel = 'Foodmandu';
+        else if (channel === 'Pathao') orderChannel = 'PathaoFood';
+        else if (channel === 'BhojDeals' || channel === 'Bhojdeals') orderChannel = 'BhojDeals';
+      }
+
       order = { 
         id: orderId, 
         table_id: selectedId, 
         status: 'open', 
+        channel: orderChannel,
         subtotal: 0, 
         tax: 0, 
         service_charge: 0, 
@@ -227,10 +238,20 @@ async function addItemToTable(menuItem) {
     const taxConfig = state.taxConfig;
     const tax = subtotal * (taxConfig.vat / 100);
     const service = subtotal * (taxConfig.service / 100);
-    const discount = order.discount || 0; // maintain existing flat/percentage discount if applied
+    
+    const discountInput = document.getElementById('billing-discount-input');
+    const discountPercent = discountInput && discountInput.value !== '' ? (parseFloat(discountInput.value) || 0) : (order.subtotal > 0 ? (order.discount / order.subtotal) * 100 : 0);
+    const discount = subtotal * (discountPercent / 100);
     const total = subtotal + tax + service - discount;
 
-    const updatedOrder = { ...order, subtotal, tax, service_charge: service, total };
+    const updatedOrder = {
+      ...order,
+      subtotal: Math.round(subtotal * 100) / 100,
+      tax: Math.round(tax * 100) / 100,
+      service_charge: Math.round(service * 100) / 100,
+      discount: Math.round(discount * 100) / 100,
+      total: Math.round(total * 100) / 100
+    };
     await updateOrder(updatedOrder);
     await queueSync('orders', 'UPDATE', updatedOrder);
     

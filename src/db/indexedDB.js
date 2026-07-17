@@ -7,6 +7,7 @@
 
 import { openDB } from 'idb';
 import { v4 as uuidv4 } from 'uuid';
+import { getLocalDateString } from '../state.js';
 
 const DB_NAME = 'tablecraft-os';
 const DB_VERSION = 3;
@@ -252,10 +253,10 @@ export async function addTransaction(tx) {
 export async function getTodayTransactions() {
   const database = getDB();
   const all = await database.getAll('transactions');
-  const todayStr = new Date().toISOString().slice(0, 10); // 'YYYY-MM-DD'
+  const todayStr = getLocalDateString(new Date());
   return all.filter((tx) => {
     if (!tx.paid_at) return false;
-    return tx.paid_at.slice(0, 10) === todayStr;
+    return getLocalDateString(tx.paid_at) === todayStr;
   });
 }
 
@@ -330,10 +331,10 @@ export async function addWasteLog(log) {
 export async function getTodayWaste() {
   const database = getDB();
   const all = await database.getAll('waste');
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = getLocalDateString(new Date());
   return all.filter((w) => {
     if (!w.wasted_at) return false;
-    return w.wasted_at.slice(0, 10) === todayStr;
+    return getLocalDateString(w.wasted_at) === todayStr;
   });
 }
 
@@ -425,4 +426,52 @@ export async function deductInventoryForOrder(orderId) {
 
   return updatedItems;
 }
+
+/** Get or create the permanent system table for takeaway order history. */
+export async function getOrCreateTakeawayArchiveTable() {
+  const database = getDB();
+  const ARCHIVE_ID = 'da7e5a00-1ecc-4a41-b0e7-4581f1e7370a';
+  let archiveTable = await database.get('tables', ARCHIVE_ID);
+  let isNew = false;
+  if (!archiveTable) {
+    archiveTable = {
+      id: ARCHIVE_ID,
+      name: 'Takeaway-Archive',
+      seats: 0,
+      status: 'available',
+      category: 'System',
+      updated_at: new Date().toISOString()
+    };
+    await database.put('tables', archiveTable);
+    isNew = true;
+  }
+  return { table: archiveTable, isNew };
+}
+
+/** Check if a table is a takeaway virtual table. */
+export function isTakeawayTable(table) {
+  if (!table) return false;
+  return (
+    table.type === 'takeaway' || 
+    table.category === 'Takeaway' || 
+    (table.name && (
+      table.name.startsWith('TA-') || 
+      table.name.startsWith('Foodmandu-') || 
+      table.name.startsWith('Pathao-') || 
+      table.name.startsWith('BhojDeals-') ||
+      table.name.startsWith('Bhojdeals-')
+    ))
+  );
+}
+
+/** Recover takeaway channel from table name. */
+export function getChannelFromTableName(name) {
+  if (!name) return 'Regular';
+  if (name.startsWith('Foodmandu-')) return 'Foodmandu';
+  if (name.startsWith('Pathao-')) return 'Pathao';
+  if (name.startsWith('BhojDeals-') || name.startsWith('Bhojdeals-')) return 'BhojDeals';
+  return 'Regular';
+}
+
+
 

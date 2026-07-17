@@ -1,5 +1,5 @@
 // Revenue & Operations Dashboard Module for TableCraft OS
-import { getState, setState, on, formatPrice } from '../state.js';
+import { getState, setState, on, formatPrice, getLocalDateString } from '../state.js';
 import { getAllTables, getOrderByTable, getOrderItems, getAllOrders, getAllInventory, getTodayWaste, upsertInventory, addWasteLog } from '../db/indexedDB.js';
 import { queueSync } from '../db/syncEngine.js';
 import { showToast } from './toasts.js';
@@ -181,10 +181,10 @@ export function renderRevenueDashboard() {
   const inventory = state.inventory || [];
   const waste = state.waste || [];
 
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = getLocalDateString(new Date());
 
   // Filter orders completed, active, and cancelled today
-  const todayOrders = orders.filter(o => o && o.created_at && o.created_at.slice(0, 10) === todayStr);
+  const todayOrders = orders.filter(o => o && o.created_at && getLocalDateString(o.created_at) === todayStr);
   const completedOrders = todayOrders.filter(o => o.status === 'paid');
   const progressOrders = todayOrders.filter(o => o.status === 'open');
   const cancelledOrders = todayOrders.filter(o => o.status === 'cancelled');
@@ -344,7 +344,8 @@ function drawChannelsSplitChart(completedOrders) {
     'Dine-in': 0,
     'Takeout': 0,
     'Foodmandu': 0,
-    'PathaoFood': 0
+    'PathaoFood': 0,
+    'BhojDeals': 0
   };
 
   completedOrders.forEach(o => {
@@ -361,7 +362,8 @@ function drawChannelsSplitChart(completedOrders) {
     'Dine-in': '#0072b2',
     'Takeout': '#e69f00',
     'Foodmandu': '#009e73',
-    'PathaoFood': '#cc79a7'
+    'PathaoFood': '#cc79a7',
+    'BhojDeals': '#cc5500'
   };
 
   if (total === 0) {
@@ -495,12 +497,27 @@ function renderPaymentsLog(transactions) {
       timeStr = new Date(tx.paid_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     } catch(e) {}
     
+    // Category Badge
+    const category = tx.category || 'Dine-in';
+    const badgeColors = {
+      'Dine-in': 'bg-primary/10 text-primary border border-primary/20',
+      'Regular': 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20',
+      'Foodmandu': 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20',
+      'Pathao': 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20',
+      'BhojDeals': 'bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20'
+    };
+    const colorClass = badgeColors[category] || 'bg-secondary/10 text-secondary border border-secondary/20';
+    const categoryBadge = `<span class="text-[9px] px-1.5 py-0.2 rounded font-bold ${colorClass}">${category}</span>`;
+    
     return `
       <div class="flex items-center justify-between p-sm hover:bg-surface-container rounded-lg transition-colors text-[12px]">
         <div class="flex items-center gap-sm">
           <span class="material-symbols-outlined text-[16px] text-secondary">receipt_long</span>
           <div>
-            <p class="font-bold text-primary">${tx.table_name}</p>
+            <p class="font-bold text-primary flex items-center gap-1">
+              ${tx.table_name}
+              ${categoryBadge}
+            </p>
             <p class="text-[10px] text-on-surface-variant">${timeStr}</p>
           </div>
         </div>

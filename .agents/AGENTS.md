@@ -19,3 +19,16 @@
 
 ## Git Operations
 * **Pushing Commits:** When the user requests to "commit to git" or "push to git", this implicitly means to both commit the changes locally AND push them to the configured remote repository (`git push`). Always push after committing unless explicitly instructed otherwise.
+
+## Code issue document
+
+Please update the project markdown logs to track a new unresolved error. Do not modify the source code files directly.
+
+## 1. Append to `fixme.md`
+Add a new markdown block at the end of the file using this exact structure:
+
+### TODO: [Brief Title of Error]
+- **File Path:** `[Insert File Path Here]`
+- **Lines Involved:** `[Insert Line Numbers Here]`
+- **Terminal Error:** `[Insert Error Message Here]`
+- **Attempted Solutions:** [Summarize what Gemini 3.5 tried and why it failed]

@@ -28,10 +28,14 @@ import {
   deleteSupplier,
   getAllRecipes,
   upsertRecipe,
-  deleteRecipe
+  deleteRecipe,
+  getOrCreateTakeawayArchiveTable,
+  updateOrder,
+  getDB,
+  isTakeawayTable
 } from './db/indexedDB.js';
 import { initSupabase, subscribeToChanges } from './db/supabase.js';
-import { initSyncEngine, pullAllFromCloud } from './db/syncEngine.js';
+import { initSyncEngine, pullAllFromCloud, queueSync } from './db/syncEngine.js';
 import { setState, getState } from './state.js';
 import { initSidebar } from './ui/sidebar.js';
 import { initFloorMap, renderFloorMap } from './ui/floorMap.js';
@@ -201,6 +205,18 @@ async function bootstrap() {
         renderMenuPanel();
         renderRevenueDashboard();
 
+        // 7. Cleanup any orphaned/stuck takeaway tables (soft cleanup of database state)
+        try {
+          // Ensure Takeaway-Archive table exists locally and in the cloud
+          const { table: archiveTable } = await getOrCreateTakeawayArchiveTable();
+          // Always queue an update/sync for the archive table on startup to guarantee it exists in Supabase
+          await queueSync('tables', 'UPDATE', archiveTable);
+
+          await cleanupOrphanedTakeaways();
+        } catch (cleanupErr) {
+          console.error('[App] Orphaned takeaway cleanup failed:', cleanupErr);
+        }
+
         // 8. Subscribe to realtime cloud changes
         subscribeToChanges({
           onTableChange: async (payload) => {
@@ -322,3 +338,58 @@ async function bootstrap() {
 
 // Boot application
 bootstrap();
+
+/**
+ * Scans and cleans up virtual takeaway tables that have no open orders.
+ * Re-routes historical orders to Takeaway-Archive and deletes the tables from local and cloud DB.
+ */
+async function cleanupOrphanedTakeaways() {
+  try {
+    const tables = await getAllTables();
+    const takeaways = tables.filter(t => isTakeawayTable(t) && t.name !== 'Takeaway-Archive');
+    if (takeaways.length === 0) return;
+
+    console.log(`[Cleanup] Found ${takeaways.length} potential takeaway tables. Checking for active orders...`);
+    let cleanedCount = 0;
+
+    for (const takeaway of takeaways) {
+      const openOrder = await getOrderByTable(takeaway.id);
+      if (!openOrder) {
+        console.log(`[Cleanup] Cleaning up orphaned takeaway table: ${takeaway.name} (ID: ${takeaway.id})`);
+        
+        // Re-route referencing paid/cancelled orders to the archive table
+        const { table: archiveTable, isNew } = await getOrCreateTakeawayArchiveTable();
+        if (isNew) {
+          await queueSync('tables', 'UPDATE', archiveTable);
+        }
+
+        const database = getDB();
+        const referencingOrders = await database.getAllFromIndex('orders', 'table_id', takeaway.id);
+
+        for (const order of referencingOrders) {
+          console.log(`[Cleanup] Re-routing order ${order.id} to Takeaway-Archive`);
+          const archivedOrder = {
+            ...order,
+            table_id: archiveTable.id
+          };
+          await updateOrder(archivedOrder);
+          await queueSync('orders', 'UPDATE', archivedOrder);
+        }
+
+        // Delete from local DB and queue DELETE to Supabase
+        await deleteTable(takeaway.id);
+        await queueSync('tables', 'DELETE', { id: takeaway.id });
+        cleanedCount++;
+      }
+    }
+
+    if (cleanedCount > 0) {
+      const currentTables = await getAllTables();
+      setState('tables', currentTables);
+      await renderFloorMap();
+      console.log(`[Cleanup] Successfully cleaned up ${cleanedCount} takeaway tables.`);
+    }
+  } catch (err) {
+    console.error('[Cleanup] Error running orphaned takeaway cleanup:', err);
+  }
+}

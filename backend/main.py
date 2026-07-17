@@ -1,7 +1,7 @@
 # TableCraft OS — FastAPI Backend (AI Proxy & Printer Server)
 # File: backend/main.py
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
@@ -43,8 +43,13 @@ CEREBRAS_ENDPOINT = "https://api.cerebras.ai/v1/chat/completions"
 CEREBRAS_MODEL = os.getenv("VITE_CEREBRAS_DEFAULT_MODEL", "gpt-oss-120b")
 CEREBRAS_API_KEY = os.getenv("VITE_CEREBRAS_API_KEY")
 
+NVIDIA_API_KEY = os.getenv("VITE_NVIDIA_API_KEY")
+NVIDIA_MODEL = os.getenv("VITE_NVIDIA_MODEL", "nvidia/parakeet-tdt-0.6b-v2")
+
 print(f"[Backend] Loaded Cerebras Model: {CEREBRAS_MODEL}")
 print(f"[Backend] Loaded API Key Length: {len(CEREBRAS_API_KEY) if CEREBRAS_API_KEY else 0} characters")
+print(f"[Backend] Loaded NVIDIA Model: {NVIDIA_MODEL}")
+print(f"[Backend] Loaded NVIDIA API Key Length: {len(NVIDIA_API_KEY) if NVIDIA_API_KEY else 0} characters")
 
 # ─────────────────────────────────────────────
 # Pydantic Schemas
@@ -57,6 +62,7 @@ class MenuItemSchema(BaseModel):
 class AIParseRequest(BaseModel):
     command: str
     menu_items: List[MenuItemSchema]
+    context: Optional[dict] = None
 
 class ReceiptItem(BaseModel):
     name: str
@@ -78,12 +84,40 @@ class PrintRequest(BaseModel):
 # Helper Functions
 # ─────────────────────────────────────────────
 
-def build_system_prompt(menu_items: List[MenuItemSchema]) -> str:
+def build_system_prompt(menu_items: List[MenuItemSchema], context: Optional[dict] = None) -> str:
     menu_items_list = "\n".join([f"- {item.name} (${item.price:.2f})" for item in menu_items])
+    
+    context_str = ""
+    if context:
+        tables_str = ""
+        for table in context.get("tables", []):
+            items_str = f" ordering: {', '.join(table['items'])}" if table.get("items") else ""
+            total_str = f" (total: {context['today_revenue']['currency']} {table['order_total']:.2f})" if table.get("order_total") else ""
+            tables_str += f"- Table {table['name']} ({table['status']}){items_str}{total_str}\n"
+            
+        low_stock_str = ""
+        for ing in context.get("low_stock_ingredients", []):
+            low_stock_str += f"- {ing['name']}: {ing['stock']} {ing['unit']} left (threshold: {ing['threshold']} {ing['unit']})\n"
+        if not low_stock_str:
+            low_stock_str = "No low-stock ingredients.\n"
+            
+        rev = context.get("today_revenue", {})
+        rev_str = f"- Net Sales Today: {rev.get('currency', 'NPR')} {rev.get('total', 0.0):.2f} (from {rev.get('transactions_count', 0)} transactions)\n"
+        
+        context_str = f"""
+Current Restaurant Live Data:
+Active Tables:
+{tables_str}
+Low-Stock Ingredients:
+{low_stock_str}
+Revenue:
+{rev_str}"""
     
     return f"""You are an AI assistant for a restaurant POS system called TableCraft OS. Parse the user's natural language command and return a JSON object representing the intent.
 
 Every JSON response object MUST include a "reply" field containing a friendly, conversational confirmation of the action in first person. E.g. "I've added 2 Chicken Burgers to table 3!" or "Table 5 is paid and closed."
+
+If the user asks questions about the current state of the restaurant (e.g. low stock, active tables, occupied tables, what table X is ordering, or daily revenue/sales), answer using the "Current Restaurant Live Data" below. For these questions, return an intent with action "CHAT" and a descriptive conversational answer in the "message" field.
 
 Available actions:
 - ADD_ITEM: Add item(s) to a table's order. Fields: {{ "action": "ADD_ITEM", "table": number, "items": [{{ "name": string, "qty": number }}], "reply": string }}
@@ -96,7 +130,8 @@ Available actions:
 - GET_STATUS: Get status info. Fields: {{ "action": "GET_STATUS", "target": "table" | "revenue" | "all", "table": number (optional), "reply": string }}
 
 Available menu items:
-{menu_items_list}"""
+{menu_items_list}
+{context_str}"""
 
 def parse_json_from_text(text: str) -> dict:
     # Try direct parse
@@ -124,7 +159,7 @@ async def ai_parse(req: AIParseRequest):
     if not CEREBRAS_API_KEY:
         raise HTTPException(status_code=500, detail="Cerebras API key not configured on backend")
         
-    system_prompt = build_system_prompt(req.menu_items)
+    system_prompt = build_system_prompt(req.menu_items, req.context)
     
     headers = {
         "Content-Type": "application/json",
@@ -195,6 +230,8 @@ async def ai_parse(req: AIParseRequest):
     except Exception as e:
         print(f"[Backend] Error processing AI command: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
+
+
 
 # ─────────────────────────────────────────────
 # Endpoint: Print Receipt Server

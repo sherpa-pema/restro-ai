@@ -1,7 +1,7 @@
 // Billing Panel Module for TableCraft OS
 
 import { getState, setState, on, formatPrice } from '../state.js';
-import { getAllTables, getTable, upsertTable, getOrderByTable, updateOrder, deleteOrder, getOrderItems, removeOrderItem, updateOrderItem, addTransaction, getAllTransactions, getTodayTransactions, deductInventoryForOrder, getAllInventory } from '../db/indexedDB.js';
+import { getAllTables, getTable, deleteTable, upsertTable, getOrderByTable, updateOrder, deleteOrder, getOrderItems, removeOrderItem, updateOrderItem, addTransaction, getAllTransactions, getTodayTransactions, deductInventoryForOrder, getAllInventory, getOrCreateTakeawayArchiveTable, isTakeawayTable, getChannelFromTableName } from '../db/indexedDB.js';
 import { queueSync } from '../db/syncEngine.js';
 import { showToast } from './toasts.js';
 import { v4 as uuidv4 } from 'uuid';
@@ -19,7 +19,6 @@ export function initBillingPanel() {
     btnPay.addEventListener('click', async () => {
       const state = getState();
       const order = state.currentOrder;
-      const orderItems = state.currentOrderItems;
       const selectedTableId = state.selectedTableId;
       
       if (!order || !selectedTableId) return;
@@ -30,6 +29,11 @@ export function initBillingPanel() {
       try {
         const now = new Date().toISOString();
         
+        let txCategory = 'Dine-in';
+        if (order.channel === 'Takeout') txCategory = 'Regular';
+        else if (order.channel === 'PathaoFood') txCategory = 'Pathao';
+        else if (order.channel) txCategory = order.channel;
+
         // 1. Create Transaction
         const transaction = {
           id: uuidv4(),
@@ -38,12 +42,13 @@ export function initBillingPanel() {
           amount: order.total,
           payment_method: 'cash',
           currency: state.currency,
+          category: txCategory,
           paid_at: now
         };
         await addTransaction(transaction);
         await queueSync('transactions', 'INSERT', transaction);
 
-        // 1.5 Deduct stock automatically when order is paid & closed
+        // 1.5 Deduct Inventory stock (if recipe config exists)
         try {
           const updatedInv = await deductInventoryForOrder(order.id);
           for (const item of updatedInv) {
@@ -58,23 +63,39 @@ export function initBillingPanel() {
         }
 
         // 2. Complete Order
-        const updatedOrder = {
+        let updatedOrder = {
           ...order,
           status: 'paid',
           paid_at: now
         };
-        await updateOrder(updatedOrder);
-        await queueSync('orders', 'UPDATE', updatedOrder);
+        
+        // 3. Mark Table as Available (or delete if takeaway slot and re-route order)
+        if (isTakeawayTable(table)) {
+          // Re-route order to the permanent Takeaway-Archive table to avoid foreign key errors on delete
+          const { table: archiveTable, isNew } = await getOrCreateTakeawayArchiveTable();
+          if (isNew) {
+            await queueSync('tables', 'UPDATE', archiveTable);
+          }
+          updatedOrder.table_id = archiveTable.id;
+          
+          await updateOrder(updatedOrder);
+          await queueSync('orders', 'UPDATE', updatedOrder);
 
-        // 3. Mark Table as Available
-        const updatedTable = {
-          ...table,
-          status: 'available',
-          current_order_id: null,
-          updated_at: now
-        };
-        await upsertTable(updatedTable);
-        await queueSync('tables', 'UPDATE', updatedTable);
+          await deleteTable(table.id);
+          await queueSync('tables', 'DELETE', { id: table.id });
+        } else {
+          await updateOrder(updatedOrder);
+          await queueSync('orders', 'UPDATE', updatedOrder);
+
+          const updatedTable = {
+            ...table,
+            status: 'available',
+            current_order_id: null,
+            updated_at: now
+          };
+          await upsertTable(updatedTable);
+          await queueSync('tables', 'UPDATE', updatedTable);
+        }
 
         // 4. Update reactive state
         const allTables = await getAllTables();
@@ -112,15 +133,20 @@ export function initBillingPanel() {
           await deleteOrder(order.id);
           await queueSync('orders', 'DELETE', { id: order.id });
 
-          // 2. Mark table as available
-          const updatedTable = {
-            ...table,
-            status: 'available',
-            current_order_id: null,
-            updated_at: now
-          };
-          await upsertTable(updatedTable);
-          await queueSync('tables', 'UPDATE', updatedTable);
+          // 2. Mark table as available (or delete if takeaway slot)
+          if (isTakeawayTable(table)) {
+            await deleteTable(table.id);
+            await queueSync('tables', 'DELETE', { id: table.id });
+          } else {
+            const updatedTable = {
+              ...table,
+              status: 'available',
+              current_order_id: null,
+              updated_at: now
+            };
+            await upsertTable(updatedTable);
+            await queueSync('tables', 'UPDATE', updatedTable);
+          }
 
           // 3. Update reactive state
           const allTables = await getAllTables();
@@ -190,29 +216,44 @@ export function initBillingPanel() {
     });
   }
 
-  // Handle Order Channel selection
-  const billingChannelSelect = document.getElementById('billing-channel');
-  if (billingChannelSelect) {
-    billingChannelSelect.addEventListener('change', async (e) => {
+  // Handle discount input change dynamically
+  const discountInput = document.getElementById('billing-discount-input');
+  if (discountInput) {
+    discountInput.addEventListener('input', async () => {
       const state = getState();
       const order = state.currentOrder;
+      const items = state.currentOrderItems;
       if (!order) return;
+
+      const discountPercent = discountInput.value !== '' ? (parseFloat(discountInput.value) || 0) : 0;
+      
+      const subtotal = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
+      const taxConfig = state.taxConfig;
+      const tax = subtotal * (taxConfig.vat / 100);
+      const service = subtotal * (taxConfig.service / 100);
+      const discount = subtotal * (discountPercent / 100);
+      const total = subtotal + tax + service - discount;
 
       const updatedOrder = {
         ...order,
-        channel: e.target.value
+        subtotal: Math.round(subtotal * 100) / 100,
+        tax: Math.round(tax * 100) / 100,
+        service_charge: Math.round(service * 100) / 100,
+        discount: Math.round(discount * 100) / 100,
+        total: Math.round(total * 100) / 100
       };
-      
+
       try {
         await updateOrder(updatedOrder);
         await queueSync('orders', 'UPDATE', updatedOrder);
+        
         setState('currentOrder', updatedOrder);
-        // Trigger dashboard re-render
-        const allOrders = await getAllOrders();
-        setState('orders', allOrders);
+        
+        const allTables = await getAllTables();
+        setState('tables', allTables);
       } catch (err) {
         console.error(err);
-        showToast('Failed to update order channel', 'error');
+        showToast('Failed to update discount', 'error');
       }
     });
   }
@@ -239,6 +280,10 @@ async function loadSelectedTableOrder(tableId) {
     if (content) content.classList.add('hidden');
     if (tableNameSpan) tableNameSpan.innerText = 'Select Table';
     if (statusSpan) statusSpan.innerText = '';
+    
+    const discountInput = document.getElementById('billing-discount-input');
+    if (discountInput) discountInput.value = '';
+
     setState('currentOrder', null);
     setState('currentOrderItems', []);
     return;
@@ -250,8 +295,15 @@ async function loadSelectedTableOrder(tableId) {
 
     if (tableNameSpan) tableNameSpan.innerText = table.name;
     if (statusSpan) {
-      statusSpan.innerText = `(${table.status.toUpperCase()})`;
-      statusSpan.className = `font-label-md text-[10px] uppercase font-bold tracking-widest ${table.status === 'occupied' ? 'text-primary' : 'text-secondary'}`;
+      if (isTakeawayTable(table)) {
+        const channel = table.channel || getChannelFromTableName(table.name);
+        const channelLabel = channel ? channel.toUpperCase() : 'TAKEAWAY';
+        statusSpan.innerText = `(${channelLabel})`;
+        statusSpan.className = `font-label-md text-[10px] uppercase font-bold tracking-widest text-purple-600 dark:text-purple-400`;
+      } else {
+        statusSpan.innerText = `(${table.status.toUpperCase()})`;
+        statusSpan.className = `font-label-md text-[10px] uppercase font-bold tracking-widest ${table.status === 'occupied' ? 'text-primary' : 'text-secondary'}`;
+      }
     }
 
     const order = await getOrderByTable(tableId);
@@ -259,12 +311,23 @@ async function loadSelectedTableOrder(tableId) {
       const items = await getOrderItems(order.id);
       setState('currentOrder', order);
       setState('currentOrderItems', items);
+
+      // Populate discount input field
+      const discountInput = document.getElementById('billing-discount-input');
+      if (discountInput) {
+        const discountPercent = order.subtotal > 0 ? (order.discount / order.subtotal) * 100 : 0;
+        discountInput.value = discountPercent > 0 ? Math.round(discountPercent) : '';
+      }
       
       if (placeholder) placeholder.classList.add('hidden');
       if (content) content.classList.remove('hidden');
     } else {
       setState('currentOrder', null);
       setState('currentOrderItems', []);
+      
+      const discountInput = document.getElementById('billing-discount-input');
+      if (discountInput) discountInput.value = '';
+
       if (placeholder) placeholder.classList.remove('hidden');
       if (content) content.classList.add('hidden');
     }
@@ -293,10 +356,12 @@ export function renderBillingPanel() {
   if (placeholder) placeholder.classList.add('hidden');
   if (content) content.classList.remove('hidden');
 
-  // Update order channel select dropdown value
-  const billingChannelSelect = document.getElementById('billing-channel');
-  if (billingChannelSelect) {
-    billingChannelSelect.value = order.channel || 'Dine-in';
+  // Update order channel display text
+  const billingChannelDisplay = document.getElementById('billing-channel-display');
+  if (billingChannelDisplay) {
+    let displayVal = order.channel || 'Dine-in';
+    if (displayVal === 'PathaoFood') displayVal = 'Pathao';
+    billingChannelDisplay.innerText = displayVal;
   }
 
   // Helper to parse notes in parentheses from item names
@@ -455,29 +520,49 @@ async function decrementItem(itemId) {
 
       const table = await getTable(selectedTableId);
       if (table) {
-        const updatedTable = {
-          ...table,
-          status: 'available',
-          current_order_id: null,
-          updated_at: now
-        };
-        await upsertTable(updatedTable);
-        await queueSync('tables', 'UPDATE', updatedTable);
+        if (isTakeawayTable(table)) {
+          await deleteTable(table.id);
+          await queueSync('tables', 'DELETE', { id: table.id });
+        } else {
+          const updatedTable = {
+            ...table,
+            status: 'available',
+            current_order_id: null,
+            updated_at: now
+          };
+          await upsertTable(updatedTable);
+          await queueSync('tables', 'UPDATE', updatedTable);
+        }
       }
 
       const allTables = await getAllTables();
       setState('tables', allTables);
-      setState('selectedTableId', selectedTableId); // Reload table order
+      
+      if (table && isTakeawayTable(table)) {
+        setState('selectedTableId', null);
+      } else {
+        setState('selectedTableId', selectedTableId); // Reload table order
+      }
     } else {
       // Recalculate order values
       const subtotal = allItems.reduce((sum, i) => sum + i.price * i.quantity, 0);
       const taxConfig = state.taxConfig;
       const tax = subtotal * (taxConfig.vat / 100);
       const service = subtotal * (taxConfig.service / 100);
-      const discount = order.discount || 0;
+      
+      const discountInput = document.getElementById('billing-discount-input');
+      const discountPercent = discountInput && discountInput.value !== '' ? (parseFloat(discountInput.value) || 0) : (order.subtotal > 0 ? (order.discount / order.subtotal) * 100 : 0);
+      const discount = subtotal * (discountPercent / 100);
       const total = subtotal + tax + service - discount;
 
-      const updatedOrder = { ...order, subtotal, tax, service_charge: service, total };
+      const updatedOrder = {
+        ...order,
+        subtotal: Math.round(subtotal * 100) / 100,
+        tax: Math.round(tax * 100) / 100,
+        service_charge: Math.round(service * 100) / 100,
+        discount: Math.round(discount * 100) / 100,
+        total: Math.round(total * 100) / 100
+      };
       await updateOrder(updatedOrder);
       await queueSync('orders', 'UPDATE', updatedOrder);
 

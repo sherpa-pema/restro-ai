@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS transactions (
   amount NUMERIC(10, 2) NOT NULL,
   payment_method TEXT NOT NULL DEFAULT 'cash',
   currency TEXT NOT NULL DEFAULT 'NPR',
+  category TEXT NOT NULL DEFAULT 'Dine-in',
   paid_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

@@ -254,8 +254,7 @@ textarea:focus {
    TERMINAL CONSOLE SYSTEM
    ============================================================ */
 .terminal-console {
-  transition: height 300ms cubic-bezier(0.4, 0, 0.2, 1), transform 300ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 300ms ease;
-  font-family: 'Geist Mono', Monaco, Consolas, 'Andale Mono', monospace;
+  transition: height 300ms cubic-bezier(0.4, 0, 0.2, 1), border-radius 300ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 300ms ease, transform 300ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* Scrollbar for terminal output */
@@ -312,11 +311,11 @@ main {
   transition: padding-bottom 300ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 body.terminal-expanded main {
-  padding-bottom: 300px;
+  padding-bottom: 400px;
 }
 @media (max-width: 1023px) {
   body.terminal-expanded main {
-    padding-bottom: 340px; /* Account for mobile tab navigation overlay */
+    padding-bottom: 420px; /* Account for mobile tab navigation overlay */
   }
 }
 

@@ -142,3 +142,16 @@ export function formatPrice(amount) {
   const sym = getCurrencySymbol();
   return `${sym}${Number(amount).toFixed(2)}`;
 }
+
+/**
+ * Returns a local date string in YYYY-MM-DD format for a given date or ISO string.
+ * @param {Date|string} date
+ * @returns {string} YYYY-MM-DD
+ */
+export function getLocalDateString(date) {
+  const d = new Date(date);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}

@@ -19,7 +19,7 @@ const TIMEOUT_MS = 12000;
  * @param {Array<{ name: string, price: number }>} menuItems — current menu items for context
  * @returns {Promise<object|null>} parsed intent object, or null on failure
  */
-export async function parseCommandWithAI(command, menuItems = []) {
+export async function parseCommandWithAI(command, menuItems = [], context = null) {
   console.log('[Cerebras AI Proxy] Dispatching request for command:', command);
 
   // Set up abort controller for timeout
@@ -37,7 +37,8 @@ export async function parseCommandWithAI(command, menuItems = []) {
         menu_items: menuItems.map(item => ({
           name: item.name,
           price: item.price
-        }))
+        })),
+        context
       }),
       signal: controller.signal,
     });

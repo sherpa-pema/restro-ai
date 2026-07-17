@@ -149,6 +149,7 @@ export async function pushTransaction(tx) {
       amount: tx.amount,
       payment_method: tx.payment_method,
       currency: tx.currency,
+      category: tx.category || 'Dine-in',
       paid_at: tx.paid_at
     };
     const { error } = await supabase
