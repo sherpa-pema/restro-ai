@@ -24,7 +24,7 @@
 
 Please update the project markdown logs to track a new unresolved error. Do not modify the source code files directly.
 
-## 1. Append to `fixme.md`
+** Append to `fixme.md`
 Add a new markdown block at the end of the file using this exact structure:
 
 ### TODO: [Brief Title of Error]
@@ -32,3 +32,6 @@ Add a new markdown block at the end of the file using this exact structure:
 - **Lines Involved:** `[Insert Line Numbers Here]`
 - **Terminal Error:** `[Insert Error Message Here]`
 - **Attempted Solutions:** [Summarize what Gemini 3.5 tried and why it failed]
+
+## Walkthrough
+The walkthrough must be short and precise in less than 10 lines. 

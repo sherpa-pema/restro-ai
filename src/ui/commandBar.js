@@ -29,8 +29,8 @@ export function initCommandBar() {
   // Toggle handlers
   const expandConsole = () => {
     isExpanded = true;
-    consoleEl.classList.remove('h-[56px]', 'rounded-full', 'shadow-[0_8px_32px_rgba(0,0,0,0.5)]');
-    consoleEl.classList.add('h-[60vh]', 'sm:h-[400px]', 'max-h-[400px]', 'rounded-2xl', 'shadow-[0_12px_40px_rgba(0,0,0,0.6)]');
+    consoleEl.classList.remove('h-[56px]', 'lg:rounded-full', 'lg:shadow-[0_8px_32px_rgba(0,0,0,0.5)]');
+    consoleEl.classList.add('h-[60vh]', 'sm:h-[400px]', 'max-h-[400px]', 'lg:rounded-2xl', 'lg:shadow-[0_12px_40px_rgba(0,0,0,0.6)]');
     if (headerEl) headerEl.classList.remove('hidden');
     bodyEl.classList.remove('hidden');
 
@@ -47,8 +47,8 @@ export function initCommandBar() {
 
   const collapseConsole = () => {
     isExpanded = false;
-    consoleEl.classList.remove('h-[60vh]', 'sm:h-[400px]', 'max-h-[400px]', 'rounded-2xl', 'shadow-[0_12px_40px_rgba(0,0,0,0.6)]');
-    consoleEl.classList.add('h-[56px]', 'rounded-full', 'shadow-[0_8px_32px_rgba(0,0,0,0.5)]');
+    consoleEl.classList.remove('h-[60vh]', 'sm:h-[400px]', 'max-h-[400px]', 'lg:rounded-2xl', 'lg:shadow-[0_12px_40px_rgba(0,0,0,0.6)]');
+    consoleEl.classList.add('h-[56px]', 'lg:rounded-full', 'lg:shadow-[0_8px_32px_rgba(0,0,0,0.5)]');
     if (headerEl) headerEl.classList.add('hidden');
     bodyEl.classList.add('hidden');
 
@@ -360,9 +360,13 @@ export function initCommandBar() {
 
     if (SpeechRecognition) {
       recognition = new SpeechRecognition();
-      recognition.continuous = false;
-      recognition.interimResults = false;
+      recognition.continuous = true;
+      recognition.interimResults = true;
       recognition.lang = 'en-US';
+
+      let pressStartTime = 0;
+      let ignoreShortTap = false;
+      let isPressing = false;
 
       recognition.addEventListener('start', () => {
         isListening = true;
@@ -373,14 +377,18 @@ export function initCommandBar() {
       });
 
       recognition.addEventListener('result', (event) => {
-        const transcript = event.results[0][0].transcript.trim();
+        if (ignoreShortTap) return;
+        
+        let transcript = '';
+        for (let i = 0; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+        }
+        transcript = transcript.trim();
+        
         if (transcript) {
           inputEl.value = transcript;
-          printToConsole(`Microphone input transcribed: "${transcript}"`, 'system');
           if (!isExpanded) expandConsole();
           inputEl.focus();
-        } else {
-          showToast('Could not hear anything clearly', 'warning');
         }
       });
 
@@ -407,17 +415,42 @@ export function initCommandBar() {
         printToConsole(`Microphone error: ${errorMsg}`, 'error');
       });
 
-      btnMic.addEventListener('click', () => {
-        if (isListening) {
-          recognition.stop();
-        } else {
-          try {
-            recognition.start();
-          } catch (err) {
-            console.error('Failed to start recognition:', err);
-          }
+      const handlePress = (e) => {
+        e.preventDefault();
+        if (isPressing) return;
+        isPressing = true;
+        pressStartTime = Date.now();
+        ignoreShortTap = false;
+        
+        try {
+          recognition.start();
+        } catch (err) {
+          console.error('Failed to start recognition:', err);
         }
-      });
+      };
+
+      const handleRelease = (e) => {
+        e.preventDefault();
+        if (!isPressing) return;
+        isPressing = false;
+        
+        const holdDuration = Date.now() - pressStartTime;
+        if (holdDuration < 300) {
+          ignoreShortTap = true;
+          recognition.abort();
+          showToast('Hold the mic button to talk', 'info');
+        } else {
+          recognition.stop();
+        }
+      };
+
+      btnMic.addEventListener('mousedown', handlePress);
+      btnMic.addEventListener('touchstart', handlePress, { passive: false });
+      
+      btnMic.addEventListener('mouseup', handleRelease);
+      btnMic.addEventListener('mouseleave', handleRelease);
+      btnMic.addEventListener('touchend', handleRelease, { passive: false });
+      btnMic.addEventListener('touchcancel', handleRelease, { passive: false });
     } else {
       btnMic.addEventListener('click', () => {
         showToast('Speech recognition not supported in this browser. Please use Chrome, Edge, or Safari.', 'error');
