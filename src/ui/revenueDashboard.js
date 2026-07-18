@@ -183,13 +183,17 @@ export function renderRevenueDashboard() {
 
   const todayStr = getLocalDateString(new Date());
 
-  // Filter orders completed, active, and cancelled today
-  const todayOrders = orders.filter(o => o && o.created_at && getLocalDateString(o.created_at) === todayStr);
-  const completedOrders = todayOrders.filter(o => o.status === 'paid');
-  const progressOrders = todayOrders.filter(o => o.status === 'open');
-  const cancelledOrders = todayOrders.filter(o => o.status === 'cancelled');
+  // Filter orders completed, active, and cancelled today using correct timestamps
+  const completedOrders = orders.filter(o => o && o.status === 'paid' && o.paid_at && getLocalDateString(o.paid_at) === todayStr);
+  const progressOrders = orders.filter(o => o && o.status === 'open' && o.created_at && getLocalDateString(o.created_at) === todayStr);
+  const cancelledOrders = orders.filter(o => o && o.status === 'cancelled' && (
+    (o.updated_at && getLocalDateString(o.updated_at) === todayStr) || 
+    (o.created_at && getLocalDateString(o.created_at) === todayStr)
+  ));
 
-  // Calculate Net & Gross Sales
+  // Calculate Total Revenue from Transactions
+  const todayTx = transactions.filter(tx => tx.paid_at && getLocalDateString(tx.paid_at) === todayStr);
+  const totalRevenue = todayTx.reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
   const grossSales = completedOrders.reduce((sum, o) => sum + Number(o.subtotal || 0), 0);
   const totalDiscounts = completedOrders.reduce((sum, o) => sum + Number(o.discount || 0), 0);
   const netSales = Math.max(0, grossSales - totalDiscounts);
@@ -202,11 +206,11 @@ export function renderRevenueDashboard() {
   const elOccupied = document.getElementById('dashboard-active-occupied');
   const elWasteCost = document.getElementById('dashboard-waste-cost');
 
-  if (elNetSales) elNetSales.innerText = formatPrice(netSales);
-  if (elGrossSalesSub) elGrossSalesSub.innerText = `Gross: ${formatPrice(grossSales)}`;
+  if (elNetSales) elNetSales.innerText = formatPrice(totalRevenue);
+  if (elGrossSalesSub) elGrossSalesSub.innerText = `Net: ${formatPrice(netSales)}`;
 
   // AOV (Average Order Value)
-  const aovValue = completedOrders.length > 0 ? netSales / completedOrders.length : 0;
+  const aovValue = completedOrders.length > 0 ? totalRevenue / completedOrders.length : 0;
   if (elAov) elAov.innerText = formatPrice(aovValue);
 
   // Table Turnover Rate

@@ -327,10 +327,33 @@ export async function pullAllFromCloud() {
 
     // 3. Pull transactions
     const cloudTransactions = await pullTransactions();
-    if (cloudTransactions && cloudTransactions.length > 0) {
+    if (cloudTransactions) { // removed .length > 0 check to allow empty cloud state sync
+      const { getAllTransactions, deleteTransaction, getSyncQueue } = await import('./indexedDB.js');
+      const localTransactions = await getAllTransactions();
+      const syncQueue = await getSyncQueue();
+      const pendingTxIds = new Set(syncQueue.filter(q => q.table === 'transactions').map(q => q.data.id));
+      
       for (const tx of cloudTransactions) {
+        // Find local transactions for the same order but with a different ID
+        const localMatches = localTransactions.filter(l => l.order_id === tx.order_id && l.id !== tx.id);
+        
+        for (const localMatch of localMatches) {
+          console.log(`[SyncEngine] Aligning transaction for order ${tx.order_id} ID: ${localMatch.id} -> ${tx.id}`);
+          await deleteTransaction(localMatch.id);
+        }
+        
         await addTransaction(tx);
       }
+
+      // Cleanup local orphaned transactions not in cloud and not pending sync
+      const cloudTxIds = new Set(cloudTransactions.map(t => t.id));
+      for (const localTx of localTransactions) {
+        if (!cloudTxIds.has(localTx.id) && !pendingTxIds.has(localTx.id)) {
+           console.log(`[SyncEngine] Removing orphaned local transaction: ${localTx.id}`);
+           await deleteTransaction(localTx.id);
+        }
+      }
+      
       const { getTodayTransactions } = await import('./indexedDB.js');
       const todayTx = await getTodayTransactions();
       setState('transactions', todayTx);

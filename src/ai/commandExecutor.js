@@ -63,6 +63,12 @@ export async function executeCommand(intent) {
         return await handleDeleteMenuItem(intent);
       case 'GET_STATUS':
         return await handleGetStatus(intent);
+      case 'TRANSFER_TABLE':
+        return await handleTransferTable(intent);
+      case 'UPDATE_MENU_PRICE':
+        return await handleUpdateMenuPrice(intent);
+      case 'UPDATE_ITEM_QUANTITY':
+        return await handleUpdateItemQuantity(intent);
       case 'CHAT':
         return { success: true, message: intent.message, isChat: true };
       case 'UNKNOWN':
@@ -491,6 +497,156 @@ async function handleGetStatus(intent) {
   }
 
   return { success: false, message: 'Unknown status target.' };
+}
+
+/**
+ * TRANSFER_TABLE — Transfer an order from one table to another.
+ */
+async function handleTransferTable(intent) {
+  const fromTable = findTableByNumber(intent.from_table);
+  const toTable = findTableByNumber(intent.to_table);
+
+  if (!fromTable) return { success: false, message: `Source table T${intent.from_table} not found.` };
+  if (!toTable) return { success: false, message: `Destination table T${intent.to_table} not found.` };
+
+  if (fromTable.status !== 'occupied' || !fromTable.current_order_id) {
+    return { success: false, message: `Table T${intent.from_table} has no active order to transfer.` };
+  }
+  if (toTable.status === 'occupied') {
+    return { success: false, message: `Table T${intent.to_table} is already occupied.` };
+  }
+
+  const order = await getOrderByTable(fromTable.id);
+  if (!order) return { success: false, message: `No active order found for T${intent.from_table}.` };
+
+  // Update order's table reference
+  order.table_id = toTable.id;
+  order.table_name = toTable.name;
+  await updateOrder(order);
+  await queueSync('orders', 'UPDATE', order);
+
+  // Mark destination as occupied
+  toTable.status = 'occupied';
+  toTable.current_order_id = order.id;
+  await upsertTable(toTable);
+  await queueSync('tables', 'UPDATE', toTable);
+
+  // Mark source as available
+  fromTable.status = 'available';
+  fromTable.current_order_id = null;
+  await upsertTable(fromTable);
+  await queueSync('tables', 'UPDATE', fromTable);
+
+  // Update state
+  await refreshState(toTable);
+  await refreshState(fromTable);
+
+  return {
+    success: true,
+    message: `Transferred order from T${intent.from_table} to T${intent.to_table}`,
+  };
+}
+
+/**
+ * UPDATE_MENU_PRICE — Update the price of a menu item.
+ */
+async function handleUpdateMenuPrice(intent) {
+  const menuItems = getState().menuItems || [];
+  const itemName = (intent.name || '').toLowerCase();
+  const target = menuItems.find(
+    (item) => item.name.toLowerCase().includes(itemName)
+  );
+
+  if (!target) {
+    return { success: false, message: `Menu item "${intent.name}" not found.` };
+  }
+
+  target.price = intent.price;
+  await addMenuItem(target);
+  await queueSync('menu_items', 'UPDATE', target);
+
+  // Update state
+  const allMenuItems = await getAllMenuItems();
+  setState('menuItems', allMenuItems);
+
+  return {
+    success: true,
+    message: `Updated price of ${target.name} to ${formatPrice(intent.price)}`,
+  };
+}
+
+/**
+ * UPDATE_ITEM_QUANTITY — Modify the quantity of an item already ordered.
+ */
+async function handleUpdateItemQuantity(intent) {
+  const table = findTableByNumber(intent.table);
+  if (!table) {
+    return { success: false, message: `Table T${intent.table} not found.` };
+  }
+
+  const order = await getOrderByTable(table.id);
+  if (!order) {
+    return { success: false, message: `No open order on T${intent.table}.` };
+  }
+
+  // Need updateOrderItem inside commandExecutor imports? 
+  // Wait, I didn't import updateOrderItem at the top of this file.
+  // I will import it in the first chunk, or use another approach.
+  // Actually, I can use addOrderItem instead since it uses database.put
+  // Let me just import updateOrderItem at the top.
+  
+  const orderItems = await getOrderItems(order.id);
+  const itemName = (intent.item_name || '').toLowerCase();
+  const targetItem = orderItems.find(
+    (oi) => oi.name.toLowerCase().includes(itemName)
+  );
+
+  if (!targetItem) {
+    return { success: false, message: `Item "${intent.item_name}" not found in order on T${intent.table}.` };
+  }
+
+  if (intent.qty <= 0) {
+    // Treat as removal
+    await removeOrderItem(targetItem.id);
+    await queueSync('order_items', 'DELETE', { id: targetItem.id });
+  } else {
+    targetItem.quantity = intent.qty;
+    // Using addOrderItem which works like upsert
+    await addOrderItem(targetItem);
+    await queueSync('order_items', 'UPDATE', targetItem);
+  }
+
+  // Recalculate totals
+  const allOrderItems = await getOrderItems(order.id);
+  const discountPercent = order.discount && order.subtotal > 0
+    ? (order.discount / order.subtotal) * 100
+    : 0;
+
+  if (allOrderItems.length === 0) {
+    await deleteOrder(order.id);
+    await queueSync('orders', 'DELETE', { id: order.id });
+
+    if (isTakeawayTable(table)) {
+      await deleteTable(table.id);
+      await queueSync('tables', 'DELETE', { id: table.id });
+    } else {
+      table.status = 'available';
+      table.current_order_id = null;
+      await upsertTable(table);
+      await queueSync('tables', 'UPDATE', table);
+    }
+  } else {
+    const updatedOrder = recalculateOrder(order, allOrderItems, discountPercent);
+    await updateOrder(updatedOrder);
+    await queueSync('orders', 'UPDATE', updatedOrder);
+  }
+
+  await refreshState(table);
+
+  return {
+    success: true,
+    message: `Updated quantity of ${targetItem.name} to ${intent.qty} on T${intent.table}`,
+  };
 }
 
 // ─────────────────────────────────────────────

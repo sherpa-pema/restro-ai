@@ -280,6 +280,12 @@ export async function getTodayTransactions() {
   });
 }
 
+/** Delete a transaction by ID. */
+export async function deleteTransaction(id) {
+  const database = getDB();
+  await database.delete('transactions', id);
+}
+
 // ─────────────────────────────────────────────
 // Sync Queue
 // ─────────────────────────────────────────────

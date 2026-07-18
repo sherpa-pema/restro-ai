@@ -128,6 +128,9 @@ Available actions:
 - ADD_MENU_ITEM: Add new item to menu. Fields: {{ "action": "ADD_MENU_ITEM", "name": string, "price": number, "emoji": string, "reply": string }}
 - DELETE_MENU_ITEM: Remove from menu. Fields: {{ "action": "DELETE_MENU_ITEM", "name": string, "reply": string }}
 - GET_STATUS: Get status info. Fields: {{ "action": "GET_STATUS", "target": "table" | "revenue" | "all", "table": number (optional), "reply": string }}
+- TRANSFER_TABLE: Transfer or move an order from one table to another. Fields: {{ "action": "TRANSFER_TABLE", "from_table": number, "to_table": number, "reply": string }}
+- UPDATE_MENU_PRICE: Update or change the price of a menu item. Fields: {{ "action": "UPDATE_MENU_PRICE", "name": string, "price": number, "reply": string }}
+- UPDATE_ITEM_QUANTITY: Change the exact quantity of an item already ordered (e.g., "Change the quantity of fries on table 2 to 4"). Note: for "add 1 more fries", use ADD_ITEM instead. Fields: {{ "action": "UPDATE_ITEM_QUANTITY", "table": number, "item_name": string, "qty": number, "reply": string }}
 
 Available menu items:
 {menu_items_list}
