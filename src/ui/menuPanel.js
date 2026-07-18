@@ -45,86 +45,185 @@ export function initMenuPanel() {
     btnCloseMenuActions.addEventListener('click', closeMenuActions);
   }
 
-  // Toggle add item form
+  // --- State for Add/OCR Form ---
+  let ocrQueue = [];
+  let isOcrMode = false;
+
+  const ocrFileInput = document.getElementById('ocr-file-input');
+  const ocrLoadingSection = document.getElementById('ocr-loading-section');
+  const addMenuFormRows = document.getElementById('add-menu-form-rows');
+  const addMenuFormTitle = document.getElementById('add-menu-form-title');
+  const addMenuFormBatchInfo = document.getElementById('add-menu-form-batch-info');
+  const btnSkipMenuItem = document.getElementById('btn-skip-menu-item');
+
+  // Toggle add item form manually
   if (btnAddMenuItem && addMenuForm) {
     btnAddMenuItem.addEventListener('click', () => {
-      closeMenuActions(); // close the expanded menu when clicking Add Item
-      addMenuForm.classList.toggle('hidden');
-      if (!addMenuForm.classList.contains('hidden')) {
-        const nameInput = document.getElementById('menu-name-input');
-        if (nameInput) nameInput.focus();
-      }
+      closeMenuActions();
+      isOcrMode = false;
+      ocrQueue = [];
+      renderFormBatch([{ name: '', description: '', category: 'General', price: '' }]);
+      addMenuForm.classList.remove('hidden');
     });
   }
 
   if (btnImportMenu) {
     btnImportMenu.addEventListener('click', () => {
       closeMenuActions();
-      const fileInput = document.getElementById('ocr-file-input');
-      if (fileInput) fileInput.click();
+      if (ocrFileInput) ocrFileInput.click();
     });
   }
 
-  // --- OCR Modal Logic ---
-  const ocrModal = document.getElementById('import-menu-modal');
-  const btnCloseOcrModal = document.getElementById('btn-close-import-menu');
-  const ocrFileInput = document.getElementById('ocr-file-input');
-  const ocrLoadingSection = document.getElementById('ocr-loading-section');
-  const ocrResultsSection = document.getElementById('ocr-results-section');
-  const ocrResultsBody = document.getElementById('ocr-results-body');
-  const btnSaveOcrItems = document.getElementById('btn-save-ocr-items');
-  
-  let extractedOcrItems = [];
-
-  const resetOcrModal = () => {
-    if (ocrModal) ocrModal.classList.add('hidden');
-    if (ocrLoadingSection) ocrLoadingSection.classList.add('hidden');
-    if (ocrResultsSection) ocrResultsSection.classList.add('hidden');
-    if (ocrResultsBody) ocrResultsBody.innerHTML = '';
-    if (btnSaveOcrItems) btnSaveOcrItems.disabled = true;
-    if (btnSaveOcrItems) btnSaveOcrItems.innerText = 'Save to Menu';
+  // Hide form and clear state
+  const resetForm = () => {
+    if (addMenuForm) addMenuForm.classList.add('hidden');
+    if (addMenuFormRows) addMenuFormRows.innerHTML = '';
+    ocrQueue = [];
+    isOcrMode = false;
     if (ocrFileInput) ocrFileInput.value = '';
-    extractedOcrItems = [];
+    if (btnSaveMenuItem) {
+      btnSaveMenuItem.disabled = false;
+      btnSaveMenuItem.innerText = 'Save';
+    }
   };
 
-  if (btnCloseOcrModal) {
-    btnCloseOcrModal.addEventListener('click', resetOcrModal);
-  }
+  if (btnCancelMenuItem) btnCancelMenuItem.addEventListener('click', resetForm);
+  if (btnSkipMenuItem) btnSkipMenuItem.addEventListener('click', () => {
+    if (isOcrMode) renderNextBatch();
+  });
+
+  const renderFormBatch = (items) => {
+    if (!addMenuFormRows) return;
+    
+    if (isOcrMode) {
+      addMenuFormTitle.innerText = "Review OCR Items";
+      addMenuFormBatchInfo.innerText = ocrQueue.length > 0 ? `${ocrQueue.length} items remaining` : 'Final batch';
+      btnSkipMenuItem.classList.remove('hidden');
+      btnSaveMenuItem.innerText = ocrQueue.length > 0 ? 'Save Batch & Next' : 'Save Batch';
+    } else {
+      addMenuFormTitle.innerText = "Add Menu Item";
+      addMenuFormBatchInfo.innerText = "";
+      btnSkipMenuItem.classList.add('hidden');
+      btnSaveMenuItem.innerText = 'Save';
+    }
+
+    addMenuFormRows.innerHTML = items.map((item, index) => `
+      <div class="menu-item-row flex flex-col md:flex-row flex-wrap gap-sm md:items-end py-2 relative" data-index="${index}">
+        <div class="flex gap-sm w-full md:w-auto md:flex-1">
+          <div>
+            <label class="text-[10px] font-label-md text-on-surface-variant uppercase tracking-widest block mb-1">Image</label>
+            <input type="file" accept="image/*" class="menu-image-input hidden">
+            <button type="button" class="menu-image-btn w-12 h-10 flex items-center justify-center bg-surface-container-lowest border border-outline-variant rounded-lg overflow-hidden hover:border-primary transition-colors">
+              <span class="menu-image-placeholder material-symbols-outlined text-[20px] text-on-surface-variant">add_photo_alternate</span>
+              <img src="" class="menu-image-preview hidden w-full h-full object-cover">
+            </button>
+          </div>
+          <div class="flex-1">
+            <label class="text-[10px] font-label-md text-on-surface-variant uppercase tracking-widest block mb-1">Name</label>
+            <input type="text" class="menu-name-input w-full h-10 px-3 bg-surface-container-lowest border border-outline-variant rounded-lg text-body-md focus:outline-none focus:border-primary" value="${item.name || ''}" placeholder="Item name">
+          </div>
+        </div>
+        <div class="w-full md:w-1/3 min-w-[200px]">
+          <label class="text-[10px] font-label-md text-on-surface-variant uppercase tracking-widest block mb-1">Description</label>
+          <input type="text" class="menu-description-input w-full h-10 px-3 bg-surface-container-lowest border border-outline-variant rounded-lg text-body-md focus:outline-none focus:border-primary" value="${item.description || ''}" placeholder="Brief description">
+        </div>
+        <div class="flex gap-sm w-full md:w-auto items-end">
+          <div class="flex-1 md:flex-none">
+            <label class="text-[10px] font-label-md text-on-surface-variant uppercase tracking-widest block mb-1">Category</label>
+            <input type="text" list="category-options" class="menu-category-input w-full md:w-32 h-10 px-3 bg-surface-container-lowest border border-outline-variant rounded-lg text-body-md focus:outline-none focus:border-primary" value="${item.category || ''}" placeholder="Category">
+          </div>
+          <div class="flex-1 md:flex-none">
+            <label class="text-[10px] font-label-md text-on-surface-variant uppercase tracking-widest block mb-1">Price</label>
+            <input type="number" step="0.01" min="0" class="menu-price-input w-full md:w-24 h-10 px-3 bg-surface-container-lowest border border-outline-variant rounded-lg text-body-md font-mono-md focus:outline-none focus:border-primary" value="${item.price || ''}" placeholder="0.00">
+          </div>
+          ${isOcrMode ? `
+          <button type="button" class="btn-remove-row h-10 px-3 bg-error/10 text-error rounded-lg hover:bg-error/20" title="Remove item">✕</button>
+          ` : ''}
+        </div>
+      </div>
+    `).join('');
+
+    // Attach event listeners for dynamic rows
+    addMenuFormRows.querySelectorAll('.menu-item-row').forEach(row => {
+      const imgInput = row.querySelector('.menu-image-input');
+      const imgBtn = row.querySelector('.menu-image-btn');
+      const imgPreview = row.querySelector('.menu-image-preview');
+      const imgPlaceholder = row.querySelector('.menu-image-placeholder');
+      const removeBtn = row.querySelector('.btn-remove-row');
+
+      if (imgBtn && imgInput) {
+        imgBtn.addEventListener('click', () => imgInput.click());
+        imgInput.addEventListener('change', (e) => {
+          const file = e.target.files[0];
+          if (file) {
+            imgPreview.src = URL.createObjectURL(file);
+            imgPreview.classList.remove('hidden');
+            imgPlaceholder.classList.add('hidden');
+          } else {
+            imgPreview.src = '';
+            imgPreview.classList.add('hidden');
+            imgPlaceholder.classList.remove('hidden');
+          }
+        });
+      }
+
+      if (removeBtn) {
+        removeBtn.addEventListener('click', () => {
+          row.remove();
+          if (addMenuFormRows.children.length === 0) {
+            if (isOcrMode && ocrQueue.length > 0) renderNextBatch();
+            else resetForm();
+          }
+        });
+      }
+    });
+
+    if (addMenuForm) addMenuForm.classList.remove('hidden');
+  };
+
+  const renderNextBatch = () => {
+    if (ocrQueue.length === 0) {
+      resetForm();
+      return;
+    }
+    const batch = ocrQueue.splice(0, 5);
+    renderFormBatch(batch);
+  };
 
   const handleOcrFile = async (file) => {
     if (!file) return;
     
-    // Open the modal now that a file has been selected
-    if (ocrModal) ocrModal.classList.remove('hidden');
+    if (ocrLoadingSection) ocrLoadingSection.classList.remove('hidden');
+    if (addMenuForm) addMenuForm.classList.add('hidden'); // hide while loading
     
-    ocrLoadingSection.classList.remove('hidden');
-    ocrResultsSection.classList.add('hidden');
-    btnSaveOcrItems.disabled = true;
-
     try {
       const processedFile = await compressImageIfNeeded(file);
       const parsedData = await analyzeImage(processedFile);
-      extractedOcrItems = parsedData;
-
-      // Render table
-      ocrResultsBody.innerHTML = parsedData.map(item => `
-        <tr class="hover:bg-surface-container transition-colors">
-          <td class="p-2 border-b border-outline-variant/30 text-primary font-medium">${item.name}</td>
-          <td class="p-2 border-b border-outline-variant/30 text-on-surface-variant">${item.category}</td>
-          <td class="p-2 border-b border-outline-variant/30 text-primary font-mono-md">${formatPrice(parseFloat(item.rate) || 0)}</td>
-        </tr>
-      `).join('');
-
-      ocrLoadingSection.classList.add('hidden');
-      ocrResultsSection.classList.remove('hidden');
       
-      if (parsedData.length > 0 && parsedData[0].category !== 'Unparsed Text') {
-        btnSaveOcrItems.disabled = false;
+      // Filter out garbage and map to our format
+      ocrQueue = parsedData
+        .filter(item => item.category !== 'Unparsed Text' && item.name.trim().length > 0)
+        .map(item => ({
+          name: item.name,
+          category: item.category || 'General',
+          price: parseFloat(item.rate) || 0,
+          description: item.description || ''
+        }));
+
+      if (ocrQueue.length === 0) {
+        showToast('No valid menu items found in the image', 'info');
+        resetForm();
+      } else {
+        isOcrMode = true;
+        renderNextBatch();
       }
     } catch (err) {
       console.error(err);
       showToast(err.message || 'Failed to analyze menu image', 'error');
-      resetOcrModal();
+      resetForm();
+    } finally {
+      if (ocrLoadingSection) ocrLoadingSection.classList.add('hidden');
+      if (ocrFileInput) ocrFileInput.value = '';
     }
   };
 
@@ -136,25 +235,53 @@ export function initMenuPanel() {
     });
   }
 
-  if (btnSaveOcrItems) {
-    btnSaveOcrItems.addEventListener('click', async () => {
-      if (extractedOcrItems.length === 0) return;
-      
-      btnSaveOcrItems.disabled = true;
-      btnSaveOcrItems.innerText = 'Saving...';
-      
-      try {
-        let addedCount = 0;
-        for (const item of extractedOcrItems) {
-          if (item.category === 'Unparsed Text') continue;
-          
+  // Save menu items (supports single and batch)
+  if (btnSaveMenuItem) {
+    btnSaveMenuItem.addEventListener('click', async () => {
+      const rows = Array.from(addMenuFormRows.querySelectorAll('.menu-item-row'));
+      if (rows.length === 0) return;
+
+      btnSaveMenuItem.disabled = true;
+      const originalText = btnSaveMenuItem.innerText;
+      btnSaveMenuItem.innerText = 'Saving...';
+
+      let addedCount = 0;
+      let hasError = false;
+
+      for (const row of rows) {
+        const imageInput = row.querySelector('.menu-image-input');
+        const nameInput = row.querySelector('.menu-name-input');
+        const descInput = row.querySelector('.menu-description-input');
+        const catInput = row.querySelector('.menu-category-input');
+        const priceInput = row.querySelector('.menu-price-input');
+
+        const name = nameInput ? nameInput.value.trim() : '';
+        const price = priceInput ? parseFloat(priceInput.value) : 0;
+        
+        if (!name) continue; // Skip empty rows
+        if (isNaN(price) || price < 0) {
+          showToast(`Invalid price for item: ${name}`, 'error');
+          hasError = true;
+          continue;
+        }
+
+        const description = descInput ? descInput.value.trim() : '';
+        const category = catInput ? catInput.value : 'General';
+        let image_url = null;
+
+        try {
+          if (imageInput && imageInput.files.length > 0) {
+            const uploadedUrl = await uploadMenuImage(imageInput.files[0], category, name);
+            if (uploadedUrl) image_url = uploadedUrl;
+          }
+
           const newItem = {
             id: uuidv4(),
-            name: item.name,
-            description: item.description || '',
-            image_url: null,
-            price: parseFloat(item.rate) || 0,
-            category: item.category || 'General',
+            name,
+            description,
+            image_url,
+            price,
+            category,
             is_active: true,
             created_at: new Date().toISOString()
           };
@@ -162,141 +289,27 @@ export function initMenuPanel() {
           await addMenuItem(newItem);
           await queueSync('menu_items', 'INSERT', newItem);
           addedCount++;
+        } catch (err) {
+          console.error(err);
+          hasError = true;
         }
+      }
 
-        // Refresh state
+      if (addedCount > 0) {
         const allItems = await getAllMenuItems();
         setState('menuItems', allItems);
-
-        showToast(`Successfully added ${addedCount} items to menu`, 'success');
-        resetOcrModal();
-      } catch (err) {
-        console.error(err);
-        showToast('Failed to save imported menu items', 'error');
-        btnSaveOcrItems.disabled = false;
-        btnSaveOcrItems.innerText = 'Save to Menu';
+        showToast(`Successfully saved ${addedCount} items`, 'success');
+      } else if (!hasError) {
+        showToast('No valid items to save', 'info');
       }
-    });
-  }
-  // --- End OCR Modal Logic ---
 
-  const imageInput = document.getElementById('menu-image-input');
-  const imageBtn = document.getElementById('menu-image-btn');
-  const imagePreview = document.getElementById('menu-image-preview');
-  const imagePlaceholder = document.getElementById('menu-image-placeholder');
+      btnSaveMenuItem.disabled = false;
+      btnSaveMenuItem.innerText = originalText;
 
-  // Handle image selection preview
-  if (imageBtn && imageInput) {
-    imageBtn.addEventListener('click', () => imageInput.click());
-    
-    imageInput.addEventListener('change', (e) => {
-      const file = e.target.files[0];
-      if (file) {
-        const url = URL.createObjectURL(file);
-        if (imagePreview) {
-          imagePreview.src = url;
-          imagePreview.classList.remove('hidden');
-        }
-        if (imagePlaceholder) imagePlaceholder.classList.add('hidden');
+      if (isOcrMode && ocrQueue.length > 0) {
+        renderNextBatch();
       } else {
-        if (imagePreview) {
-          imagePreview.src = '';
-          imagePreview.classList.add('hidden');
-        }
-        if (imagePlaceholder) imagePlaceholder.classList.remove('hidden');
-      }
-    });
-  }
-
-  // Hide form and clear inputs
-  const resetForm = () => {
-    if (addMenuForm) addMenuForm.classList.add('hidden');
-    const imageInput = document.getElementById('menu-image-input');
-    const imagePreview = document.getElementById('menu-image-preview');
-    const imagePlaceholder = document.getElementById('menu-image-placeholder');
-    const nameInput = document.getElementById('menu-name-input');
-    const descriptionInput = document.getElementById('menu-description-input');
-    const categoryInput = document.getElementById('menu-category-input');
-    const priceInput = document.getElementById('menu-price-input');
-    
-    if (imageInput) imageInput.value = '';
-    if (imagePreview) {
-      imagePreview.src = '';
-      imagePreview.classList.add('hidden');
-    }
-    if (imagePlaceholder) imagePlaceholder.classList.remove('hidden');
-    
-    if (nameInput) nameInput.value = '';
-    if (descriptionInput) descriptionInput.value = '';
-    if (categoryInput) categoryInput.value = 'General';
-    if (priceInput) priceInput.value = '';
-  };
-
-  if (btnCancelMenuItem) btnCancelMenuItem.addEventListener('click', resetForm);
-
-  // Save new menu item
-  if (btnSaveMenuItem) {
-    btnSaveMenuItem.addEventListener('click', async () => {
-      const imageInput = document.getElementById('menu-image-input');
-      const nameInput = document.getElementById('menu-name-input');
-      const descriptionInput = document.getElementById('menu-description-input');
-      const priceInput = document.getElementById('menu-price-input');
-
-      if (!nameInput || !nameInput.value.trim()) {
-        showToast('Item name is required', 'error');
-        return;
-      }
-      if (!priceInput || isNaN(parseFloat(priceInput.value)) || parseFloat(priceInput.value) < 0) {
-        showToast('Valid item price is required', 'error');
-        return;
-      }
-
-      const name = nameInput.value.trim();
-      const description = descriptionInput ? descriptionInput.value.trim() : '';
-      const price = parseFloat(priceInput.value);
-      const categoryInput = document.getElementById('menu-category-input');
-      const category = categoryInput ? categoryInput.value : 'General';
-      
-      let image_url = null;
-
-      btnSaveMenuItem.disabled = true;
-      btnSaveMenuItem.innerText = 'Saving...';
-
-      try {
-        if (imageInput && imageInput.files.length > 0) {
-          const file = imageInput.files[0];
-          const uploadedUrl = await uploadMenuImage(file, category, name);
-          if (uploadedUrl) {
-            image_url = uploadedUrl;
-          }
-        }
-
-        const newItem = {
-          id: uuidv4(),
-          name,
-          description,
-          image_url,
-          price,
-          category,
-          is_active: true,
-          created_at: new Date().toISOString()
-        };
-
-        await addMenuItem(newItem);
-        await queueSync('menu_items', 'INSERT', newItem);
-
-        // Refresh state
-        const allItems = await getAllMenuItems();
-        setState('menuItems', allItems);
-
-        showToast(`${name} added to menu`, 'success');
         resetForm();
-      } catch (err) {
-        console.error(err);
-        showToast('Failed to add menu item', 'error');
-      } finally {
-        btnSaveMenuItem.disabled = false;
-        btnSaveMenuItem.innerText = 'Save';
       }
     });
   }
