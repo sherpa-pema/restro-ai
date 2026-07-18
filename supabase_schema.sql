@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS tables (
 CREATE TABLE IF NOT EXISTS menu_items (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
-  emoji TEXT NOT NULL DEFAULT '🍽️',
+  description TEXT,
+  image_url TEXT,
   price NUMERIC(10, 2) NOT NULL,
   category TEXT DEFAULT 'General',
   is_active BOOLEAN NOT NULL DEFAULT true,

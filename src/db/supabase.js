@@ -73,7 +73,8 @@ export async function pushMenuItem(item) {
     const dbItem = {
       id: item.id,
       name: item.name,
-      emoji: item.emoji,
+      description: item.description || null,
+      image_url: item.image_url || null,
       price: item.price,
       category: item.category,
       is_active: item.is_active,
@@ -86,6 +87,35 @@ export async function pushMenuItem(item) {
     return true;
   } catch (err) {
     console.error('[Supabase] pushMenuItem failed:', err);
+    return null;
+  }
+}
+
+/** Upload an image for a menu item to Supabase Storage */
+export async function uploadMenuImage(file, category, itemName) {
+  try {
+    // Sanitize category and name for safe file paths
+    const safeCategory = (category || 'Uncategorized').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+    const safeName = (itemName || 'item').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+    const fileExt = file.name.split('.').pop();
+    
+    // Create a path like: "drinks/mojito_16843920.jpg" to avoid collisions if name is same
+    const fileName = `${safeCategory}/${safeName}_${Date.now()}.${fileExt}`;
+    
+    const { data, error } = await supabase.storage
+      .from('menu-images')
+      .upload(fileName, file, { upsert: true });
+      
+    if (error) throw error;
+    
+    // Get the public URL
+    const { data: publicUrlData } = supabase.storage
+      .from('menu-images')
+      .getPublicUrl(fileName);
+      
+    return publicUrlData.publicUrl;
+  } catch (err) {
+    console.error('[Supabase] uploadMenuImage failed:', err);
     return null;
   }
 }
