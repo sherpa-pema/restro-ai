@@ -32,7 +32,9 @@ import {
   getOrCreateTakeawayArchiveTable,
   updateOrder,
   getDB,
-  isTakeawayTable
+  isTakeawayTable,
+  getRestaurantProfile,
+  upsertRestaurant
 } from './db/indexedDB.js';
 import { initSupabase, subscribeToChanges } from './db/supabase.js';
 import { initSyncEngine, pullAllFromCloud, queueSync } from './db/syncEngine.js';
@@ -140,10 +142,12 @@ async function bootstrap() {
     const tables = await getAllTables();
     const menuItems = await getAllMenuItems();
     const transactions = await getTodayTransactions();
+    const restaurant = await getRestaurantProfile();
     
     setState('tables', tables);
     setState('menuItems', menuItems);
     setState('transactions', transactions);
+    setState('restaurant', restaurant);
     
     // Load overview-specific data (non-critical — wrapped to protect core boot)
     try {
@@ -200,6 +204,11 @@ async function bootstrap() {
         setState('waste', syncedWaste);
         setState('suppliers', syncedSuppliers);
         setState('recipes', syncedRecipes);
+        
+        // pullAllFromCloud handles pulling and saving the restaurant profile to IndexedDB
+        // We ensure the state is up-to-date with whatever was saved
+        const localRestaurant = await getRestaurantProfile();
+        setState('restaurant', localRestaurant);
         
         await renderFloorMap();
         renderMenuPanel();
@@ -322,6 +331,13 @@ async function bootstrap() {
             }
             const current = await getAllRecipes();
             setState('recipes', current);
+          },
+          onRestaurantChange: async (payload) => {
+            if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+              await upsertRestaurant(payload.new);
+            }
+            const current = await getRestaurantProfile();
+            setState('restaurant', current);
           }
         });
       }

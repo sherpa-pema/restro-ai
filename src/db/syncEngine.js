@@ -35,7 +35,9 @@ import {
   pushSupplier,
   pullSuppliers,
   pushRecipe,
-  pullRecipes
+  pullRecipes,
+  pushRestaurantProfile,
+  pullRestaurantProfile
 } from './supabase.js';
 
 import { setState, getState } from '../state.js';
@@ -53,7 +55,8 @@ const PUSH_FN_MAP = {
   inventory: pushInventory,
   waste: pushWaste,
   suppliers: pushSupplier,
-  recipes: pushRecipe
+  recipes: pushRecipe,
+  restaurants: pushRestaurantProfile
 };
 
 // ─────────────────────────────────────────────
@@ -254,7 +257,8 @@ export async function pullAllFromCloud() {
       upsertSupplier,
       upsertRecipe,
       getAllSuppliers,
-      getAllRecipes
+      getAllRecipes,
+      upsertRestaurant
     } = await import('./indexedDB.js');
 
     // 1. Pull and Reconcile Tables
@@ -394,6 +398,14 @@ export async function pullAllFromCloud() {
       const allRecipes = await getAllRecipes();
       setState('recipes', allRecipes);
       console.log(`[SyncEngine] Synced ${cloudRecipes.length} recipes`);
+    }
+
+    // 9. Pull Restaurant Profile
+    const cloudRestaurant = await pullRestaurantProfile();
+    if (cloudRestaurant) {
+      await upsertRestaurant(cloudRestaurant);
+      setState('restaurant', cloudRestaurant);
+      console.log(`[SyncEngine] Synced restaurant profile`);
     }
 
     setState('syncStatus', 'synced');

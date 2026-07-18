@@ -61,6 +61,9 @@ const state = {
 
   /** @type {{vat: number, service: number}} Configurable tax rates (percentages) */
   taxConfig: { vat: 10, service: 5 },
+
+  /** @type {object|null} Restaurant profile information */
+  restaurant: null,
 };
 
 // ------------------------------------

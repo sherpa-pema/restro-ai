@@ -25,9 +25,12 @@ CREATE TABLE IF NOT EXISTS menu_items (
 );
 
 -- 3. Orders
+CREATE SEQUENCE IF NOT EXISTS orders_bill_number_seq START 1;
+
 CREATE TABLE IF NOT EXISTS orders (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   table_id UUID NOT NULL REFERENCES tables(id) ON DELETE CASCADE,
+  bill_number TEXT NOT NULL DEFAULT lpad(nextval('orders_bill_number_seq')::text, 3, '0'),
   status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'paid', 'cancelled')),
   subtotal NUMERIC(10, 2) NOT NULL DEFAULT 0,
   tax NUMERIC(10, 2) NOT NULL DEFAULT 0,
@@ -52,6 +55,7 @@ CREATE TABLE IF NOT EXISTS order_items (
 CREATE TABLE IF NOT EXISTS transactions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   order_id UUID REFERENCES orders(id),
+  bill_number TEXT,
   table_name TEXT NOT NULL,
   amount NUMERIC(10, 2) NOT NULL,
   payment_method TEXT NOT NULL DEFAULT 'cash',
@@ -213,3 +217,60 @@ BEGIN
   END IF;
 END $$;
 
+-- 10. Add Variants support
+ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS variants JSONB DEFAULT '[]'::jsonb;
+
+-- 11. Restaurants (Client Onboarding Information)
+CREATE TABLE IF NOT EXISTS restaurants (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  business_name TEXT NOT NULL,
+  address TEXT NOT NULL,
+  pan_vat_number TEXT,
+  telephone_number TEXT,
+  email TEXT,
+  service_charge NUMERIC(5, 2) DEFAULT 0,
+  tax_percent NUMERIC(5, 2) DEFAULT 0,
+  contact_person TEXT,
+  contact_person_number TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Enable Row Level Security
+ALTER TABLE restaurants ENABLE ROW LEVEL SECURITY;
+
+-- RLS Policies
+DROP POLICY IF EXISTS "Allow all on restaurants" ON restaurants;
+CREATE POLICY "Allow all on restaurants" ON restaurants FOR ALL USING (true) WITH CHECK (true);
+
+-- Enable Realtime
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_rel pr
+    JOIN pg_publication p ON p.oid = pr.prpubid
+    JOIN pg_class c ON c.oid = pr.prrelid
+    WHERE p.pubname = 'supabase_realtime' AND c.relname = 'restaurants'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE restaurants;
+  END IF;
+END $$;
+
+-- 12. Trigger to sync bill_number from orders to transactions
+CREATE OR REPLACE FUNCTION set_transaction_bill_number()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.bill_number IS NULL THEN
+    SELECT bill_number INTO NEW.bill_number
+    FROM orders
+    WHERE id = NEW.order_id;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_set_transaction_bill_number ON transactions;
+CREATE TRIGGER trg_set_transaction_bill_number
+BEFORE INSERT ON transactions
+FOR EACH ROW
+EXECUTE FUNCTION set_transaction_bill_number();

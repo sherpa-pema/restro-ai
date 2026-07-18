@@ -9,6 +9,12 @@ import { v4 as uuidv4 } from 'uuid';
 import { analyzeImage } from '../services/ocrService.js';
 import { compressImageIfNeeded } from '../utils/imageCompressor.js';
 
+export let isMenuEditMode = false;
+export let editingItemId = null;
+export let renderFormBatchFn = null;
+export let isOcrMode = false;
+export let ocrQueue = [];
+
 /**
  * Initialize Menu panel controls.
  */
@@ -22,15 +28,42 @@ export function initMenuPanel() {
   const menuActionsExpanded = document.getElementById('menu-actions-expanded');
   const btnCloseMenuActions = document.getElementById('btn-close-menu-actions');
   const btnImportMenu = document.getElementById('btn-import-menu');
+  const searchInput = document.getElementById('menu-search-input');
 
-  // Open expanded actions menu
-  if (btnMenuSettings && menuActionsExpanded) {
-    btnMenuSettings.addEventListener('click', () => {
-      btnMenuSettings.classList.add('opacity-0', 'pointer-events-none', '-translate-x-4');
-      menuActionsExpanded.classList.remove('opacity-0', 'pointer-events-none', 'translate-x-4');
-      menuActionsExpanded.classList.add('opacity-100', 'translate-x-0');
+  if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      renderMenuPanel();
     });
   }
+
+
+
+  // --- State for Add/OCR Form ---
+  ocrQueue = [];
+  isOcrMode = false;
+
+  const ocrFileInput = document.getElementById('ocr-file-input');
+  const btnDeleteMenuItem = document.getElementById('btn-delete-menu-item');
+  const ocrLoadingSection = document.getElementById('ocr-loading-section');
+  const addMenuFormRows = document.getElementById('add-menu-form-rows');
+  const addMenuFormTitle = document.getElementById('add-menu-form-title');
+  const addMenuFormBatchInfo = document.getElementById('add-menu-form-batch-info');
+  const btnSkipMenuItem = document.getElementById('btn-skip-menu-item');
+
+  // Hide form and clear state
+  const resetForm = () => {
+    if (addMenuForm) addMenuForm.classList.add('hidden');
+    if (addMenuFormRows) addMenuFormRows.innerHTML = '';
+    ocrQueue = [];
+    isOcrMode = false;
+    editingItemId = null;
+    if (btnDeleteMenuItem) btnDeleteMenuItem.classList.add('hidden');
+    if (ocrFileInput) ocrFileInput.value = '';
+    if (btnSaveMenuItem) {
+      btnSaveMenuItem.disabled = false;
+      btnSaveMenuItem.innerText = 'Save';
+    }
+  };
 
   // Close expanded actions menu function
   const closeMenuActions = () => {
@@ -38,33 +71,16 @@ export function initMenuPanel() {
       menuActionsExpanded.classList.remove('opacity-100', 'translate-x-0');
       menuActionsExpanded.classList.add('opacity-0', 'pointer-events-none', 'translate-x-4');
       btnMenuSettings.classList.remove('opacity-0', 'pointer-events-none', '-translate-x-4');
+      isMenuEditMode = false;
+      renderMenuPanel();
+      
+      // Also close the add item form
+      resetForm();
     }
   };
 
   if (btnCloseMenuActions) {
     btnCloseMenuActions.addEventListener('click', closeMenuActions);
-  }
-
-  // --- State for Add/OCR Form ---
-  let ocrQueue = [];
-  let isOcrMode = false;
-
-  const ocrFileInput = document.getElementById('ocr-file-input');
-  const ocrLoadingSection = document.getElementById('ocr-loading-section');
-  const addMenuFormRows = document.getElementById('add-menu-form-rows');
-  const addMenuFormTitle = document.getElementById('add-menu-form-title');
-  const addMenuFormBatchInfo = document.getElementById('add-menu-form-batch-info');
-  const btnSkipMenuItem = document.getElementById('btn-skip-menu-item');
-
-  // Toggle add item form manually
-  if (btnAddMenuItem && addMenuForm) {
-    btnAddMenuItem.addEventListener('click', () => {
-      closeMenuActions();
-      isOcrMode = false;
-      ocrQueue = [];
-      renderFormBatch([{ name: '', description: '', category: 'General', price: '' }]);
-      addMenuForm.classList.remove('hidden');
-    });
   }
 
   if (btnImportMenu) {
@@ -74,20 +90,57 @@ export function initMenuPanel() {
     });
   }
 
-  // Hide form and clear state
-  const resetForm = () => {
-    if (addMenuForm) addMenuForm.classList.add('hidden');
-    if (addMenuFormRows) addMenuFormRows.innerHTML = '';
-    ocrQueue = [];
-    isOcrMode = false;
-    if (ocrFileInput) ocrFileInput.value = '';
-    if (btnSaveMenuItem) {
-      btnSaveMenuItem.disabled = false;
-      btnSaveMenuItem.innerText = 'Save';
-    }
-  };
+  // Use settings icon to directly open Add Menu Item form AND expand actions
+  if (btnMenuSettings && addMenuForm) {
+    btnMenuSettings.addEventListener('click', () => {
+      isOcrMode = false;
+      editingItemId = null;
+      if (btnDeleteMenuItem) btnDeleteMenuItem.classList.add('hidden');
+      ocrQueue = [];
+      renderFormBatch([{ name: '', description: '', category: 'General', price: '' }]);
+      addMenuForm.classList.remove('hidden');
+
+      // Expand actions menu
+      if (menuActionsExpanded) {
+        btnMenuSettings.classList.add('opacity-0', 'pointer-events-none', '-translate-x-4');
+        menuActionsExpanded.classList.remove('opacity-0', 'pointer-events-none', 'translate-x-4');
+        menuActionsExpanded.classList.add('opacity-100', 'translate-x-0');
+        isMenuEditMode = true;
+        renderMenuPanel();
+      }
+    });
+  }
 
   if (btnCancelMenuItem) btnCancelMenuItem.addEventListener('click', resetForm);
+
+  if (btnDeleteMenuItem) {
+    btnDeleteMenuItem.addEventListener('click', async () => {
+      if (!editingItemId) return;
+      
+      const state = getState();
+      const item = state.menuItems.find(i => i.id === editingItemId);
+      if (!item) return;
+
+      if (confirm(`Remove "${item.name}" from the menu?`)) {
+        btnDeleteMenuItem.disabled = true;
+        try {
+          await deleteMenuItem(editingItemId);
+          await queueSync('menu_items', 'DELETE', { id: editingItemId });
+
+          const allItems = await getAllMenuItems();
+          setState('menuItems', allItems);
+
+          showToast(`"${item.name}" removed from menu`, 'info');
+          resetForm();
+        } catch (err) {
+          console.error(err);
+          showToast('Failed to remove menu item', 'error');
+        } finally {
+          btnDeleteMenuItem.disabled = false;
+        }
+      }
+    });
+  }
   if (btnSkipMenuItem) btnSkipMenuItem.addEventListener('click', () => {
     if (isOcrMode) renderNextBatch();
   });
@@ -101,47 +154,95 @@ export function initMenuPanel() {
       btnSkipMenuItem.classList.remove('hidden');
       btnSaveMenuItem.innerText = ocrQueue.length > 0 ? 'Save Batch & Next' : 'Save Batch';
     } else {
-      addMenuFormTitle.innerText = "Add Menu Item";
+      addMenuFormTitle.innerText = editingItemId ? "Edit Item" : "Add Menu Item";
       addMenuFormBatchInfo.innerText = "";
       btnSkipMenuItem.classList.add('hidden');
       btnSaveMenuItem.innerText = 'Save';
     }
 
-    addMenuFormRows.innerHTML = items.map((item, index) => `
+    const uniqueCategories = [...new Set(getState().menuItems.map(i => i.category).filter(Boolean))];
+    if (uniqueCategories.length === 0) {
+      ['General', 'Starters', 'Mains', 'Desserts', 'Beverages'].forEach(c => uniqueCategories.push(c));
+    } else if (!uniqueCategories.includes('General')) {
+      uniqueCategories.unshift('General');
+    }
+
+    addMenuFormRows.innerHTML = items.map((item, index) => {
+      const initialCat = item.category || 'General';
+      const isCustomCat = !uniqueCategories.includes(initialCat);
+      const selectValue = isCustomCat ? '__custom__' : initialCat;
+      const customValue = isCustomCat ? initialCat : '';
+
+      return `
       <div class="menu-item-row flex flex-col md:flex-row flex-wrap gap-sm md:items-end py-2 relative" data-index="${index}">
         <div class="flex gap-sm w-full md:w-auto md:flex-1">
           <div>
             <label class="text-[10px] font-label-md text-on-surface-variant uppercase tracking-widest block mb-1">Image</label>
             <input type="file" accept="image/*" class="menu-image-input hidden">
             <button type="button" class="menu-image-btn w-12 h-10 flex items-center justify-center bg-surface-container-lowest border border-outline-variant rounded-lg overflow-hidden hover:border-primary transition-colors">
-              <span class="menu-image-placeholder material-symbols-outlined text-[20px] text-on-surface-variant">add_photo_alternate</span>
-              <img src="" class="menu-image-preview hidden w-full h-full object-cover">
+              <span class="menu-image-placeholder material-symbols-outlined text-[20px] text-on-surface-variant ${item.image_url ? 'hidden' : ''}">add_photo_alternate</span>
+              <img src="${item.image_url || ''}" class="menu-image-preview ${item.image_url ? '' : 'hidden'} w-full h-full object-cover">
             </button>
           </div>
           <div class="flex-1">
             <label class="text-[10px] font-label-md text-on-surface-variant uppercase tracking-widest block mb-1">Name</label>
-            <input type="text" class="menu-name-input w-full h-10 px-3 bg-surface-container-lowest border border-outline-variant rounded-lg text-body-md focus:outline-none focus:border-primary" value="${item.name || ''}" placeholder="Item name">
+            <input type="text" class="menu-name-input h-10 px-3 bg-surface-container-lowest border border-outline-variant rounded-lg text-body-md focus:outline-none focus:border-primary" style="width: calc(100% - 7px);" value="${item.name || ''}" placeholder="Item name">
           </div>
         </div>
         <div class="w-full md:w-1/3 min-w-[200px]">
           <label class="text-[10px] font-label-md text-on-surface-variant uppercase tracking-widest block mb-1">Description</label>
-          <input type="text" class="menu-description-input w-full h-10 px-3 bg-surface-container-lowest border border-outline-variant rounded-lg text-body-md focus:outline-none focus:border-primary" value="${item.description || ''}" placeholder="Brief description">
+          <input type="text" class="menu-description-input h-10 px-3 bg-surface-container-lowest border border-outline-variant rounded-lg text-body-md focus:outline-none focus:border-primary" style="width: calc(100% - 4px);" value="${item.description || ''}" placeholder="Brief description">
         </div>
         <div class="flex gap-sm w-full md:w-auto items-end">
           <div class="flex-1 md:flex-none">
             <label class="text-[10px] font-label-md text-on-surface-variant uppercase tracking-widest block mb-1">Category</label>
-            <input type="text" list="category-options" class="menu-category-input w-full md:w-32 h-10 px-3 bg-surface-container-lowest border border-outline-variant rounded-lg text-body-md focus:outline-none focus:border-primary" value="${item.category || ''}" placeholder="Category">
+            <div class="flex flex-col gap-1">
+              <select class="menu-category-select w-full h-10 px-3 bg-surface-container-lowest border border-outline-variant rounded-lg text-body-md focus:outline-none focus:border-primary" style="min-width: 240px;">
+                ${uniqueCategories.map(cat => `<option value="${cat}" ${selectValue === cat ? 'selected' : ''}>${cat}</option>`).join('')}
+                <option value="__custom__" ${selectValue === '__custom__' ? 'selected' : ''}>+ Add Custom...</option>
+              </select>
+              <input type="text" class="menu-category-custom-input ${isCustomCat ? '' : 'hidden'} w-full h-10 px-3 bg-surface-container-lowest border border-outline-variant rounded-lg text-body-md focus:outline-none focus:border-primary" style="min-width: 240px;" value="${customValue}" placeholder="New Category">
+            </div>
           </div>
           <div class="flex-1 md:flex-none">
-            <label class="text-[10px] font-label-md text-on-surface-variant uppercase tracking-widest block mb-1">Price</label>
-            <input type="number" step="0.01" min="0" class="menu-price-input w-full md:w-24 h-10 px-3 bg-surface-container-lowest border border-outline-variant rounded-lg text-body-md font-mono-md focus:outline-none focus:border-primary" value="${item.price || ''}" placeholder="0.00">
+            <div class="flex items-center justify-between mb-1">
+              <label class="text-[10px] font-label-md text-on-surface-variant uppercase tracking-widest block">Price</label>
+              <label class="flex items-center gap-1 cursor-pointer" title="Add sizes or variations">
+                <input type="checkbox" class="menu-has-variants-checkbox accent-primary h-3 w-3" ${item.variants && item.variants.length > 0 ? 'checked' : ''}>
+                <span class="text-[10px] text-on-surface-variant">Has Variants</span>
+              </label>
+            </div>
+            <input type="number" step="0.01" min="0" class="menu-price-input ${item.variants && item.variants.length > 0 ? 'hidden' : ''} w-full md:w-24 h-10 px-3 bg-surface-container-lowest border border-outline-variant rounded-lg text-body-md font-mono-md focus:outline-none focus:border-primary" value="${item.price || ''}" placeholder="0.00">
           </div>
           ${isOcrMode ? `
           <button type="button" class="btn-remove-row h-10 px-3 bg-error/10 text-error rounded-lg hover:bg-error/20" title="Remove item">✕</button>
           ` : ''}
         </div>
+        
+        <!-- Variants Container -->
+        <div class="variants-container ${item.variants && item.variants.length > 0 ? 'flex' : 'hidden'} w-full bg-surface-container-low p-3 rounded-lg mt-2 border border-outline-variant flex-col gap-2">
+          <div class="variants-list flex flex-col gap-2">
+            ${item.variants && item.variants.length > 0 ? item.variants.map(v => `
+            <div class="variant-row flex gap-2 items-center">
+              <input type="text" placeholder="Size (e.g. 30ml)" class="variant-name-input flex-1 h-9 px-3 bg-surface-container-lowest border border-outline-variant rounded-md text-body-sm focus:border-primary focus:outline-none" value="${v.name || ''}">
+              <input type="number" step="0.01" min="0" placeholder="Price" class="variant-price-input w-24 h-9 px-3 bg-surface-container-lowest border border-outline-variant rounded-md text-body-sm font-mono-sm focus:border-primary focus:outline-none" value="${v.price || ''}">
+              <button type="button" class="btn-remove-variant w-9 h-9 flex items-center justify-center text-error opacity-50 hover:opacity-100 hover:bg-error/10 rounded-md transition-all">✕</button>
+            </div>
+            `).join('') : `
+            <div class="variant-row flex gap-2 items-center">
+              <input type="text" placeholder="Size (e.g. 30ml)" class="variant-name-input flex-1 h-9 px-3 bg-surface-container-lowest border border-outline-variant rounded-md text-body-sm focus:border-primary focus:outline-none">
+              <input type="number" step="0.01" min="0" placeholder="Price" class="variant-price-input w-24 h-9 px-3 bg-surface-container-lowest border border-outline-variant rounded-md text-body-sm font-mono-sm focus:border-primary focus:outline-none">
+              <button type="button" class="btn-remove-variant w-9 h-9 flex items-center justify-center text-error opacity-50 hover:opacity-100 hover:bg-error/10 rounded-md transition-all">✕</button>
+            </div>
+            `}
+          </div>
+          <button type="button" class="btn-add-variant self-start mt-1 text-primary text-[12px] font-medium hover:underline flex items-center gap-1">
+            <span class="material-symbols-outlined text-[14px]">add</span> Add Option
+          </button>
+        </div>
       </div>
-    `).join('');
+      `;
+    }).join('');
 
     // Attach event listeners for dynamic rows
     addMenuFormRows.querySelectorAll('.menu-item-row').forEach(row => {
@@ -175,6 +276,66 @@ export function initMenuPanel() {
             else resetForm();
           }
         });
+      }
+
+      // Category Logic
+      const categorySelect = row.querySelector('.menu-category-select');
+      const customCategoryInput = row.querySelector('.menu-category-custom-input');
+      
+      if (categorySelect && customCategoryInput) {
+        categorySelect.addEventListener('change', (e) => {
+          if (e.target.value === '__custom__') {
+            customCategoryInput.classList.remove('hidden');
+            customCategoryInput.focus();
+          } else {
+            customCategoryInput.classList.add('hidden');
+          }
+        });
+      }
+
+      // Variants Logic
+      const hasVariantsCheckbox = row.querySelector('.menu-has-variants-checkbox');
+      const variantsContainer = row.querySelector('.variants-container');
+      const priceInput = row.querySelector('.menu-price-input');
+      const btnAddVariant = row.querySelector('.btn-add-variant');
+      const variantsList = row.querySelector('.variants-list');
+
+      if (hasVariantsCheckbox && variantsContainer && priceInput) {
+        hasVariantsCheckbox.addEventListener('change', (e) => {
+          if (e.target.checked) {
+            variantsContainer.classList.remove('hidden');
+            variantsContainer.classList.add('flex');
+            priceInput.classList.add('hidden');
+          } else {
+            variantsContainer.classList.add('hidden');
+            variantsContainer.classList.remove('flex');
+            priceInput.classList.remove('hidden');
+          }
+        });
+      }
+
+      const createVariantRow = () => {
+        const div = document.createElement('div');
+        div.className = 'variant-row flex gap-2 items-center';
+        div.innerHTML = `
+          <input type="text" placeholder="Size (e.g. 60ml)" class="variant-name-input flex-1 h-9 px-3 bg-surface-container-lowest border border-outline-variant rounded-md text-body-sm focus:border-primary focus:outline-none">
+          <input type="number" step="0.01" min="0" placeholder="Price" class="variant-price-input w-24 h-9 px-3 bg-surface-container-lowest border border-outline-variant rounded-md text-body-sm font-mono-sm focus:border-primary focus:outline-none">
+          <button type="button" class="btn-remove-variant w-9 h-9 flex items-center justify-center text-error opacity-50 hover:opacity-100 hover:bg-error/10 rounded-md transition-all">✕</button>
+        `;
+        div.querySelector('.btn-remove-variant').addEventListener('click', () => div.remove());
+        return div;
+      };
+
+      if (btnAddVariant && variantsList) {
+        btnAddVariant.addEventListener('click', () => {
+          variantsList.appendChild(createVariantRow());
+        });
+        
+        // attach remove listener to initial default row
+        const initialRemoveBtn = variantsList.querySelector('.btn-remove-variant');
+        if (initialRemoveBtn) {
+          initialRemoveBtn.addEventListener('click', (e) => e.target.closest('.variant-row').remove());
+        }
       }
     });
 
@@ -252,42 +413,74 @@ export function initMenuPanel() {
         const imageInput = row.querySelector('.menu-image-input');
         const nameInput = row.querySelector('.menu-name-input');
         const descInput = row.querySelector('.menu-description-input');
-        const catInput = row.querySelector('.menu-category-input');
+        const catSelect = row.querySelector('.menu-category-select');
+        const catCustom = row.querySelector('.menu-category-custom-input');
         const priceInput = row.querySelector('.menu-price-input');
 
         const name = nameInput ? nameInput.value.trim() : '';
-        const price = priceInput ? parseFloat(priceInput.value) : 0;
-        
         if (!name) continue; // Skip empty rows
-        if (isNaN(price) || price < 0) {
-          showToast(`Invalid price for item: ${name}`, 'error');
-          hasError = true;
-          continue;
+
+        const hasVariants = row.querySelector('.menu-has-variants-checkbox')?.checked;
+        let price = 0;
+        let variants = [];
+
+        if (hasVariants) {
+          const variantRows = Array.from(row.querySelectorAll('.variants-list .variant-row'));
+          for (const vRow of variantRows) {
+            const vName = vRow.querySelector('.variant-name-input').value.trim();
+            const vPrice = parseFloat(vRow.querySelector('.variant-price-input').value);
+            if (vName && !isNaN(vPrice) && vPrice >= 0) {
+              variants.push({ name: vName, price: vPrice });
+            }
+          }
+          if (variants.length === 0) {
+            showToast(`Please add at least one valid variant for: ${name}`, 'error');
+            hasError = true;
+            continue;
+          }
+          price = Math.min(...variants.map(v => v.price)); // base price is the cheapest variant
+        } else {
+          price = priceInput ? parseFloat(priceInput.value) : 0;
+          if (isNaN(price) || price < 0) {
+            showToast(`Invalid price for item: ${name}`, 'error');
+            hasError = true;
+            continue;
+          }
         }
 
         const description = descInput ? descInput.value.trim() : '';
-        const category = catInput ? catInput.value : 'General';
+        let category = 'General';
+        if (catSelect) {
+          category = catSelect.value === '__custom__' 
+            ? (catCustom && catCustom.value.trim() ? catCustom.value.trim() : 'General')
+            : catSelect.value;
+        }
         let image_url = null;
 
         try {
+          const originalItem = editingItemId ? getState().menuItems.find(i => i.id === editingItemId) : null;
+          
           if (imageInput && imageInput.files.length > 0) {
             const uploadedUrl = await uploadMenuImage(imageInput.files[0], category, name);
             if (uploadedUrl) image_url = uploadedUrl;
+          } else if (originalItem) {
+            image_url = originalItem.image_url;
           }
 
           const newItem = {
-            id: uuidv4(),
+            id: editingItemId || uuidv4(),
             name,
             description,
             image_url,
             price,
             category,
+            variants: variants.length > 0 ? variants : [],
             is_active: true,
-            created_at: new Date().toISOString()
+            created_at: originalItem ? originalItem.created_at : new Date().toISOString()
           };
 
           await addMenuItem(newItem);
-          await queueSync('menu_items', 'INSERT', newItem);
+          await queueSync('menu_items', editingItemId ? 'UPDATE' : 'INSERT', newItem);
           addedCount++;
         } catch (err) {
           console.error(err);
@@ -317,6 +510,74 @@ export function initMenuPanel() {
   // Subscribe to changes
   on('menuItems', renderMenuPanel);
   on('currency', renderMenuPanel);
+
+  // Assign the internal function to the module-scoped variable for external access
+  renderFormBatchFn = renderFormBatch;
+}
+
+// --- Variant Selection Modal Logic ---
+const showVariantSelectionModal = (item) => {
+  const modal = document.getElementById('variant-selection-modal');
+  const title = document.getElementById('variant-modal-title');
+  const optionsContainer = document.getElementById('variant-modal-options');
+  const btnClose = document.getElementById('btn-close-variant-modal');
+  const overlay = document.getElementById('variant-selection-overlay');
+
+  if (!modal || !item.variants) return;
+
+  title.innerText = `Select Option for ${item.name}`;
+  
+  optionsContainer.innerHTML = item.variants.map((v, idx) => `
+    <button type="button" class="variant-option-btn w-full p-4 bg-surface-container-lowest hover:bg-surface-container hover:border-primary border border-outline-variant rounded-xl flex justify-between items-center transition-all text-left group" data-variant-index="${idx}">
+      <span class="font-headline-sm text-on-surface group-hover:text-primary transition-colors">${v.name}</span>
+      <span class="font-mono-md text-primary font-bold">${formatPrice(v.price)}</span>
+    </button>
+  `).join('');
+
+  const closeModal = () => {
+    modal.classList.add('hidden');
+  };
+
+  btnClose.onclick = closeModal;
+  overlay.onclick = closeModal;
+
+  optionsContainer.querySelectorAll('.variant-option-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt(btn.getAttribute('data-variant-index'));
+      const selectedVariant = item.variants[idx];
+      
+      // Create a cloned item representing this specific variant
+      const variantItem = {
+        ...item,
+        id: item.id, // keep original menu_item_id
+        name: `${item.name} (${selectedVariant.name})`,
+        price: selectedVariant.price,
+        is_variant: true,
+        variant_name: selectedVariant.name
+      };
+      
+      addItemToTable(variantItem);
+      closeModal();
+    });
+  });
+
+  modal.classList.remove('hidden');
+};
+
+/**
+ * Update dynamic category datalist based on existing menu items.
+ */
+function updateCategoryDatalist(menuItems) {
+  const datalist = document.getElementById('category-options');
+  if (!datalist) return;
+  const categories = new Set(menuItems.map(item => item.category).filter(Boolean));
+  
+  // Add some defaults if the database is completely empty
+  if (categories.size === 0) {
+    ['General', 'Starters', 'Mains', 'Desserts', 'Beverages'].forEach(c => categories.add(c));
+  }
+  
+  datalist.innerHTML = Array.from(categories).sort().map(cat => `<option value="${cat}"></option>`).join('');
 }
 
 /**
@@ -327,43 +588,136 @@ export function renderMenuPanel() {
   const countSpan = document.getElementById('menu-count');
   if (!grid) return;
 
-  const menuItems = getState().menuItems.filter(item => item.is_active !== false);
+  // Preserve open states
+  const openCategories = new Set();
+  const hasRenderedBefore = grid.children.length > 0;
+  if (hasRenderedBefore) {
+    grid.querySelectorAll('details.category-group').forEach(details => {
+      if (details.open) openCategories.add(details.dataset.category);
+    });
+  }
+
+  // Get search term
+  const searchInput = document.getElementById('menu-search-input');
+  const searchTerm = searchInput ? searchInput.value.trim().toLowerCase() : '';
+
+  let menuItems = getState().menuItems.filter(item => item.is_active !== false);
+  
+  if (searchTerm) {
+    menuItems = menuItems.filter(item => 
+      item.name.toLowerCase().includes(searchTerm) || 
+      (item.description && item.description.toLowerCase().includes(searchTerm))
+    );
+  }
+
+  updateCategoryDatalist(menuItems);
+  
   if (countSpan) countSpan.innerText = menuItems.length;
 
-  grid.innerHTML = menuItems.map(item => {
-    return `
-      <div class="group flex items-center justify-between p-md border border-outline-variant rounded-xl hover:border-primary transition-all bg-surface-container-lowest">
-        <div class="flex items-center gap-md">
-          <div class="w-12 h-12 shrink-0 bg-surface-container rounded-lg flex items-center justify-center overflow-hidden">
-            ${item.image_url 
-              ? `<img src="${item.image_url}" class="w-full h-full object-cover" />` 
-              : `<span class="material-symbols-outlined text-[24px] text-on-surface-variant/40">restaurant</span>`
+  // Group items by category
+  const grouped = {};
+  menuItems.forEach(item => {
+    const cat = item.category || 'General';
+    if (!grouped[cat]) grouped[cat] = [];
+    grouped[cat].push(item);
+  });
+
+  let html = '';
+  for (const cat of Object.keys(grouped).sort()) {
+    const items = grouped[cat];
+    const shouldOpen = searchTerm.length > 0 ? true : (!hasRenderedBefore || openCategories.has(cat));
+
+    html += `
+      <details class="category-group mb-md" data-category="${cat}" ${shouldOpen ? 'open' : ''}>
+        <summary class="font-headline-md text-primary cursor-pointer mb-sm hover:text-on-surface-variant transition-colors flex items-center gap-2 select-none">
+          ${cat} <span class="text-body-sm text-on-surface-variant bg-surface-variant px-2 py-0.5 rounded-full">${items.length}</span>
+        </summary>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-2 2xl:grid-cols-3 gap-md pl-2">
+          ${items.map(item => {
+            let priceDisplay = formatPrice(item.price);
+            if (item.variants && item.variants.length > 0) {
+              const minPrice = Math.min(...item.variants.map(v => v.price));
+              const maxPrice = Math.max(...item.variants.map(v => v.price));
+              priceDisplay = minPrice === maxPrice ? formatPrice(minPrice) : `From ${formatPrice(minPrice)}`;
             }
-          </div>
-          <div>
-            <h4 class="font-headline-md text-headline-md text-primary leading-tight">${item.name}</h4>
-            ${item.description ? `<p class="text-[11px] text-on-surface-variant line-clamp-1 mt-0.5 mb-1">${item.description}</p>` : ''}
-            <p class="font-mono-md text-mono-md text-on-surface-variant">${formatPrice(item.price)}</p>
-          </div>
+
+            return `
+              <div class="group flex items-center justify-between p-md border border-outline-variant rounded-xl hover:border-primary transition-all bg-surface-container-lowest">
+                <div class="flex items-center gap-md">
+                  <div class="w-12 h-12 shrink-0 bg-surface-container rounded-lg flex items-center justify-center overflow-hidden">
+                    ${item.image_url 
+                      ? `<img src="${item.image_url}" class="w-full h-full object-cover" />` 
+                      : `<span class="material-symbols-outlined text-[24px] text-on-surface-variant/40">restaurant</span>`
+                    }
+                  </div>
+                  <div>
+                    <h4 class="font-headline-md text-headline-md text-primary leading-tight">${item.name}</h4>
+                    ${item.description ? `<p class="text-[11px] text-on-surface-variant line-clamp-1 mt-0.5 mb-1">${item.description}</p>` : ''}
+                    <p class="font-mono-md text-mono-md text-on-surface-variant">${priceDisplay}</p>
+                  </div>
+                </div>
+                <div class="flex items-center gap-xs">
+                  ${isMenuEditMode ? `
+                  <button class="edit-menu-btn w-10 h-10 rounded-full bg-surface-variant flex items-center justify-center text-on-surface-variant transition-transform active:scale-90 group-hover:shadow-lg" data-edit-menu-id="${item.id}" title="Edit Item">
+                    <span class="material-symbols-outlined">edit</span>
+                  </button>
+                  ` : `
+                  <button class="delete-menu-btn w-8 h-8 rounded-full bg-error/10 text-error flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity" data-delete-menu-id="${item.id}" title="Delete Item">
+                    <span class="material-symbols-outlined text-[16px]">close</span>
+                  </button>
+                  <button class="add-to-order-btn w-10 h-10 rounded-full bg-primary flex items-center justify-center text-on-primary transition-transform active:scale-90 group-hover:shadow-lg" data-add-menu-id="${item.id}">
+                    <span class="material-symbols-outlined">add</span>
+                  </button>
+                  `}
+                </div>
+              </div>
+            `;
+          }).join('')}
         </div>
-        <div class="flex items-center gap-xs">
-          <button class="delete-menu-btn w-8 h-8 rounded-full bg-error/10 text-error flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity" data-delete-menu-id="${item.id}" title="Delete Item">
-            <span class="material-symbols-outlined text-[16px]">close</span>
-          </button>
-          <button class="add-to-order-btn w-10 h-10 rounded-full bg-primary flex items-center justify-center text-on-primary transition-transform active:scale-90 group-hover:shadow-lg" data-add-menu-id="${item.id}">
-            <span class="material-symbols-outlined">add</span>
-          </button>
-        </div>
-      </div>
+      </details>
     `;
-  }).join('');
+  }
+
+  grid.innerHTML = html;
 
   // Setup click listeners for "+" buttons
   grid.querySelectorAll('[data-add-menu-id]').forEach(btn => {
     btn.addEventListener('click', () => {
       const id = btn.getAttribute('data-add-menu-id');
       const item = menuItems.find(i => i.id === id);
-      if (item) addItemToTable(item);
+      if (!item) return;
+
+      if (item.variants && item.variants.length > 0) {
+        showVariantSelectionModal(item);
+      } else {
+        addItemToTable(item);
+      }
+    });
+  });
+
+  // Setup click listeners for edit buttons
+  grid.querySelectorAll('[data-edit-menu-id]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-edit-menu-id');
+      const item = menuItems.find(i => i.id === id);
+      if (!item) return;
+
+      editingItemId = id;
+      isOcrMode = false;
+      ocrQueue = [];
+      
+      const formTitle = document.getElementById('add-menu-form-title');
+      if (formTitle) formTitle.innerText = "Edit Menu Item";
+      
+      const btnDelete = document.getElementById('btn-delete-menu-item');
+      if (btnDelete) btnDelete.classList.remove('hidden');
+
+      if (renderFormBatchFn) renderFormBatchFn([item]);
+      
+      const addForm = document.getElementById('add-menu-form');
+      if (addForm) {
+        addForm.classList.remove('hidden');
+      }
     });
   });
 

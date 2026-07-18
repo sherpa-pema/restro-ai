@@ -10,7 +10,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { getLocalDateString } from '../state.js';
 
 const DB_NAME = 'tablecraft-os';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 /** @type {import('idb').IDBPDatabase | null} */
 let db = null;
@@ -81,6 +81,11 @@ export async function initDB() {
       if (!database.objectStoreNames.contains('recipes')) {
         const recipeStore = database.createObjectStore('recipes', { keyPath: 'id' });
         recipeStore.createIndex('menu_item_id', 'menu_item_id', { unique: false });
+      }
+
+      // Restaurants store
+      if (!database.objectStoreNames.contains('restaurants')) {
+        database.createObjectStore('restaurants', { keyPath: 'id' });
       }
     },
   });
@@ -243,6 +248,21 @@ export async function getAllTransactions() {
 export async function addTransaction(tx) {
   const database = getDB();
   const record = { ...tx, id: tx.id || uuidv4() };
+
+  if (!record.bill_number) {
+    const all = await database.getAll('transactions');
+    let max = 0;
+    for (const t of all) {
+      if (t.bill_number) {
+        const num = parseInt(t.bill_number, 10);
+        if (!isNaN(num) && num > max) {
+          max = num;
+        }
+      }
+    }
+    record.bill_number = String(max + 1).padStart(3, '0');
+  }
+
   await database.put('transactions', record);
 }
 
@@ -386,10 +406,29 @@ export async function upsertRecipe(recipe) {
   return record;
 }
 
-/** Delete a recipe by ID. */
+/** Delete a recipe item */
 export async function deleteRecipe(id) {
   const database = getDB();
   await database.delete('recipes', id);
+}
+
+// ─────────────────────────────────────────────
+// Restaurant Settings CRUD
+// ─────────────────────────────────────────────
+
+/** Get the first restaurant profile. */
+export async function getRestaurantProfile() {
+  const database = getDB();
+  const allProfiles = await database.getAll('restaurants');
+  return allProfiles.length > 0 ? allProfiles[0] : null;
+}
+
+/** Insert or update a restaurant profile. */
+export async function upsertRestaurant(restaurant) {
+  const database = getDB();
+  const record = { ...restaurant, id: restaurant.id || uuidv4() };
+  await database.put('restaurants', record);
+  return record.id;
 }
 
 // ─────────────────────────────────────────────

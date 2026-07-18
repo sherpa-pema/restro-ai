@@ -263,6 +263,7 @@ export function initBillingPanel() {
   on('currentOrder', renderBillingPanel);
   on('currentOrderItems', renderBillingPanel);
   on('currency', renderBillingPanel);
+  on('restaurant', renderBillingPanel);
 }
 
 /**
@@ -273,13 +274,11 @@ async function loadSelectedTableOrder(tableId) {
   const placeholder = document.getElementById('billing-placeholder');
   const content = document.getElementById('billing-content');
   const tableNameSpan = document.getElementById('billing-table-name');
-  const statusSpan = document.getElementById('billing-status');
 
   if (!tableId) {
     if (placeholder) placeholder.classList.remove('hidden');
     if (content) content.classList.add('hidden');
     if (tableNameSpan) tableNameSpan.innerText = 'Select Table';
-    if (statusSpan) statusSpan.innerText = '';
     
     const discountInput = document.getElementById('billing-discount-input');
     if (discountInput) discountInput.value = '';
@@ -294,17 +293,6 @@ async function loadSelectedTableOrder(tableId) {
     if (!table) return;
 
     if (tableNameSpan) tableNameSpan.innerText = table.name;
-    if (statusSpan) {
-      if (isTakeawayTable(table)) {
-        const channel = table.channel || getChannelFromTableName(table.name);
-        const channelLabel = channel ? channel.toUpperCase() : 'TAKEAWAY';
-        statusSpan.innerText = `(${channelLabel})`;
-        statusSpan.className = `font-label-md text-[10px] uppercase font-bold tracking-widest text-purple-600 dark:text-purple-400`;
-      } else {
-        statusSpan.innerText = `(${table.status.toUpperCase()})`;
-        statusSpan.className = `font-label-md text-[10px] uppercase font-bold tracking-widest ${table.status === 'occupied' ? 'text-primary' : 'text-secondary'}`;
-      }
-    }
 
     const order = await getOrderByTable(tableId);
     if (order) {
@@ -356,12 +344,42 @@ export function renderBillingPanel() {
   if (placeholder) placeholder.classList.add('hidden');
   if (content) content.classList.remove('hidden');
 
+  // Render Tax Invoice Header if restaurant data is available
+  const restaurant = getState().restaurant;
+  const invoiceHeader = document.getElementById('billing-invoice-header');
+  if (invoiceHeader) {
+    if (restaurant) {
+      document.getElementById('billing-business-name').innerText = restaurant.business_name || '';
+      document.getElementById('billing-address').innerText = restaurant.address || '';
+      document.getElementById('billing-phone').innerText = `Phone: ${restaurant.telephone_number || ''}`;
+      document.getElementById('billing-pan').innerText = `PAN: ${restaurant.pan_vat_number || ''}`;
+      invoiceHeader.classList.remove('hidden');
+      invoiceHeader.classList.add('flex');
+    } else {
+      invoiceHeader.classList.add('hidden');
+      invoiceHeader.classList.remove('flex');
+    }
+  }
+
   // Update order channel display text
   const billingChannelDisplay = document.getElementById('billing-channel-display');
   if (billingChannelDisplay) {
     let displayVal = order.channel || 'Dine-in';
     if (displayVal === 'PathaoFood') displayVal = 'Pathao';
     billingChannelDisplay.innerText = displayVal;
+  }
+
+  const billNoSpan = document.getElementById('billing-bill-number');
+  if (billNoSpan) {
+    billNoSpan.innerText = order.bill_number ? String(order.bill_number).padStart(3, '0') : '000';
+  }
+
+  const dateSpan = document.getElementById('billing-date');
+  const timeSpan = document.getElementById('billing-time');
+  if (dateSpan && timeSpan) {
+    const timestamp = order.created_at ? new Date(order.created_at) : new Date();
+    dateSpan.innerText = timestamp.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    timeSpan.innerText = timestamp.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
   }
 
   // Helper to parse notes in parentheses from item names
@@ -414,31 +432,38 @@ export function renderBillingPanel() {
 
   // Render items rows
   if (itemsContainer) {
-    itemsContainer.innerHTML = items.map(item => {
+    itemsContainer.innerHTML = items.map((item, index) => {
       const { baseName, note } = parseItemName(item.name);
       return `
-        <div class="group flex flex-col py-2 hover:bg-surface-container rounded-lg px-2 transition-all border-b border-outline-variant/30">
-          <div class="flex justify-between items-center w-full">
-            <div class="flex items-center gap-sm">
-              <span class="font-mono-md text-primary font-bold">${item.quantity}×</span>
-              <span class="font-body-lg text-body-lg text-primary font-medium">${baseName}</span>
-            </div>
-            <div class="flex items-center gap-sm">
-              <span class="font-mono-md font-bold text-primary">${formatPrice(item.price * item.quantity)}</span>
-              <button class="remove-item-btn w-6 h-6 rounded-full bg-error/10 text-error flex items-center justify-center opacity-100 lg:opacity-0 lg:group-hover:opacity-100 hover:!opacity-100 transition-opacity" data-remove-item-id="${item.id}" title="Reduce Quantity">
-                <span class="material-symbols-outlined text-[14px]">remove</span>
+        <tr class="group hover:bg-surface-container transition-colors">
+          <td class="p-2 text-center font-mono-md text-on-surface-variant">${index + 1}.</td>
+          <td class="p-2 font-body-sm max-w-[120px] break-words whitespace-normal">
+            <div class="font-medium whitespace-normal break-words">${baseName}</div>
+            ${note ? `
+            <div class="text-[10px] text-amber-600 flex justify-between items-center pr-2 mt-0.5">
+              <span>Note: ${note}</span>
+              <button class="edit-note-btn text-primary hover:underline" data-edit-note-id="${item.id}" title="Edit Note">
+                <span class="material-symbols-outlined text-[12px]">edit</span>
               </button>
             </div>
-          </div>
-          <div class="flex items-center justify-between pl-6 text-xs text-on-surface-variant gap-2 mt-1">
-            <span class="italic text-[11px] font-semibold text-amber-600 dark:text-amber-400">
-              ${note ? `Instructions: ${note}` : 'No instructions'}
-            </span>
-            <button class="edit-note-btn text-[10px] text-primary hover:underline font-semibold" data-edit-note-id="${item.id}" title="Edit Instructions">
-              Edit Note
+            ` : `
+            <div class="text-[10px] text-amber-600 flex justify-between items-center pr-2 mt-0.5 opacity-0 lg:group-hover:opacity-100 transition-opacity">
+              <span></span>
+              <button class="edit-note-btn text-primary hover:underline" data-edit-note-id="${item.id}" title="Add Note">
+                <span class="material-symbols-outlined text-[12px]">edit</span> Add Note
+              </button>
+            </div>
+            `}
+          </td>
+          <td class="p-2 text-center font-mono-md">${item.quantity}</td>
+          <td class="p-2 text-right font-mono-md">${item.price}</td>
+          <td class="p-2 text-right font-mono-md font-bold">${(item.price * item.quantity).toFixed(2)}</td>
+          <td class="p-2 text-center">
+            <button class="remove-item-btn w-5 h-5 rounded-full bg-error/10 text-error inline-flex items-center justify-center opacity-100 lg:opacity-0 lg:group-hover:opacity-100 hover:!opacity-100 transition-opacity" data-remove-item-id="${item.id}" title="Reduce Quantity">
+              <span class="material-symbols-outlined text-[12px]">remove</span>
             </button>
-          </div>
-        </div>
+          </td>
+        </tr>
       `;
     }).join('');
 

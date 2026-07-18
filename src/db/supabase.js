@@ -77,6 +77,7 @@ export async function pushMenuItem(item) {
       image_url: item.image_url || null,
       price: item.price,
       category: item.category,
+      variants: item.variants || [],
       is_active: item.is_active,
       created_at: item.created_at
     };
@@ -435,17 +436,61 @@ export async function pullRecipes() {
   }
 }
 
+/** Pull restaurant profile from Supabase. */
+export async function pullRestaurantProfile() {
+  try {
+    const { data, error } = await supabase
+      .from('restaurants')
+      .select('*')
+      .limit(1);
+    if (error) throw error;
+    return data && data.length > 0 ? data[0] : null;
+  } catch (err) {
+    console.error('[Supabase] pullRestaurantProfile failed:', err);
+    return null;
+  }
+}
+
+/** Push restaurant profile to Supabase. */
+export async function pushRestaurantProfile(restaurant) {
+  try {
+    const dbRestaurant = {
+      id: restaurant.id,
+      business_name: restaurant.business_name,
+      address: restaurant.address,
+      pan_vat_number: restaurant.pan_vat_number,
+      telephone_number: restaurant.telephone_number,
+      email: restaurant.email,
+      service_charge: restaurant.service_charge,
+      tax_percent: restaurant.tax_percent,
+      contact_person: restaurant.contact_person,
+      contact_person_number: restaurant.contact_person_number,
+      updated_at: new Date().toISOString()
+    };
+    
+    // We expect only 1 row typically, so upsert handles it via the id
+    const { error } = await supabase
+      .from('restaurants')
+      .upsert(dbRestaurant, { onConflict: 'id' });
+    if (error) throw error;
+    return true;
+  } catch (err) {
+    console.error('[Supabase] pushRestaurantProfile failed:', err);
+    return null;
+  }
+}
+
 // ─────────────────────────────────────────────
 // Realtime Subscriptions
 // ─────────────────────────────────────────────
 
 /**
  * Subscribe to realtime changes on all core tables.
- * @param {{ onTableChange: Function, onMenuChange: Function, onOrderChange: Function, onOrderItemChange: Function, onInventoryChange: Function, onWasteChange: Function, onSupplierChange: Function, onRecipeChange: Function }} callbacks
+ * @param {{ onTableChange: Function, onMenuChange: Function, onOrderChange: Function, onOrderItemChange: Function, onInventoryChange: Function, onWasteChange: Function, onSupplierChange: Function, onRecipeChange: Function, onRestaurantChange: Function }} callbacks
  * @returns {import('@supabase/supabase-js').RealtimeChannel} The channel for cleanup
  */
 export function subscribeToChanges(callbacks) {
-  const { onTableChange, onMenuChange, onOrderChange, onOrderItemChange, onInventoryChange, onWasteChange, onSupplierChange, onRecipeChange } = callbacks;
+  const { onTableChange, onMenuChange, onOrderChange, onOrderItemChange, onInventoryChange, onWasteChange, onSupplierChange, onRecipeChange, onRestaurantChange } = callbacks;
 
   const channel = supabase
     .channel('tablecraft-realtime')
@@ -511,6 +556,14 @@ export function subscribeToChanges(callbacks) {
       (payload) => {
         console.log('[Realtime] recipes change:', payload.eventType);
         if (onRecipeChange) onRecipeChange(payload);
+      }
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'restaurants' },
+      (payload) => {
+        console.log('[Realtime] restaurants change:', payload.eventType);
+        if (onRestaurantChange) onRestaurantChange(payload);
       }
     )
     .subscribe((status) => {
