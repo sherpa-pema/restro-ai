@@ -9,6 +9,9 @@
 * If a UI component has been modified, **Do NOT launch automated browser agents** or browser-based testing tools (like Puppeteer, Playwright, or Chrome DevTools subagents) under any circumstances unless explicitly commanded.
 * only list what changes were made very precisely in short. 
 
+## Implementation plan
+* when generating the implementation plan, do not display code jargon, only simply keep it short and precise.
+
 ## Code Safety & Feature Isolation
 * **Verify Imports:** Always double-check that any new functions you call are explicitly imported at the top of the file. Missing imports cause silent, app-breaking crashes.
 * **Isolate New Features:** When adding new features to shared boot paths (like `main.js`), wrap them in `try-catch` blocks. A failure in a new component (e.g. overview dashboard) must NEVER prevent existing core features (e.g. tables, menu) from loading.
@@ -35,3 +38,6 @@ Add a new markdown block at the end of the file using this exact structure:
 
 ## Walkthrough
 The walkthrough must be short and precise in less than 10 lines. 
+
+## Responsive Design Requirement
+* All UI components and layouts must be designed to be mobile and tablet friendly. Always use responsive classes (e.g., `flex-col md:flex-row`, `flex-wrap`) to prevent overlapping, cramping, or randomly placed elements on smaller viewports. Do not assume a desktop-only viewport.

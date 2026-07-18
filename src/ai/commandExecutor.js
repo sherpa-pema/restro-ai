@@ -23,6 +23,9 @@ import {
   addTransaction,
   getTodayTransactions,
   getAllTables,
+  getChannelFromTableName,
+  deleteTable,
+  isTakeawayTable,
 } from '../db/indexedDB.js';
 
 import { queueSync } from '../db/syncEngine.js';
@@ -208,9 +211,26 @@ async function handleRemoveItem(intent) {
   const discountPercent = order.discount && order.subtotal > 0
     ? (order.discount / order.subtotal) * 100
     : 0;
-  const updatedOrder = recalculateOrder(order, remainingItems, discountPercent);
-  await updateOrder(updatedOrder);
-  await queueSync('orders', 'UPDATE', updatedOrder);
+  
+  if (remainingItems.length === 0) {
+    // No items left -> delete order, mark table as available
+    await deleteOrder(order.id);
+    await queueSync('orders', 'DELETE', { id: order.id });
+
+    if (isTakeawayTable(table)) {
+      await deleteTable(table.id);
+      await queueSync('tables', 'DELETE', { id: table.id });
+    } else {
+      table.status = 'available';
+      table.current_order_id = null;
+      await upsertTable(table);
+      await queueSync('tables', 'UPDATE', table);
+    }
+  } else {
+    const updatedOrder = recalculateOrder(order, remainingItems, discountPercent);
+    await updateOrder(updatedOrder);
+    await queueSync('orders', 'UPDATE', updatedOrder);
+  }
 
   // Update app state
   await refreshState(table);
@@ -441,11 +461,27 @@ async function handleGetStatus(intent) {
 
     const allTables = await getAllTables();
     const occupiedTables = allTables.filter(t => t.status === 'occupied');
-    const occupiedCount = occupiedTables.length;
-    const occupiedNames = occupiedTables.map(t => t.name).join(', ');
+    
+    let regularCount = 0;
+    const channels = {};
 
-    const occupiedStr = occupiedCount > 0
-      ? `${occupiedCount} table${occupiedCount !== 1 ? 's' : ''} occupied (${occupiedNames})`
+    for (const t of occupiedTables) {
+      const channel = getChannelFromTableName(t.name);
+      if (channel === 'Regular') {
+        regularCount++;
+      } else {
+        channels[channel] = (channels[channel] || 0) + 1;
+      }
+    }
+
+    let statsArr = [];
+    if (regularCount > 0) statsArr.push(`Tables Occupied - ${regularCount}`);
+    for (const [ch, count] of Object.entries(channels)) {
+      statsArr.push(`${ch} - ${count}`);
+    }
+
+    const occupiedStr = statsArr.length > 0 
+      ? statsArr.join(', ')
       : 'No tables occupied';
 
     return {

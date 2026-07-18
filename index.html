@@ -331,9 +331,9 @@
         <div class="flex-1 flex flex-col gap-xl">
           <!-- Floor Plan -->
           <section class="bg-surface-container-lowest p-lg rounded-xl border border-outline-variant shadow-sm">
-            <div class="flex justify-between items-center mb-lg">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 md:gap-0 mb-lg">
               <h2 class="font-headline-xl text-headline-xl text-primary tracking-tight">Floor Plan — <span id="floor-map-count">8</span> Tables</h2>
-              <div class="flex items-center gap-sm">
+              <div class="flex flex-wrap items-center gap-sm">
                 <div class="flex items-center gap-sm text-[11px] font-medium text-on-surface-variant uppercase tracking-widest">
                   <span class="w-2 h-2 rounded-full bg-secondary"></span>
                   Live Sync
@@ -373,7 +373,7 @@
 
           <!-- Menu Section -->
           <section id="menu-section" class="bg-surface-container-lowest p-lg rounded-xl border border-outline-variant shadow-sm flex-1">
-            <div class="flex justify-between items-center mb-lg">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 md:gap-0 mb-lg">
               <h2 class="font-headline-xl text-headline-xl text-primary tracking-tight">Menu • <span id="menu-count">0</span></h2>
               <button id="btn-add-menu-item" class="flex items-center gap-xs text-[12px] font-bold uppercase tracking-widest text-on-surface-variant hover:text-primary transition-colors">
                 <span class="material-symbols-outlined text-[18px]">add_circle</span>
@@ -410,7 +410,7 @@
         <!-- Right Column: Billing -->
         <div class="w-full xl:w-[380px] flex flex-col gap-lg">
           <section id="billing-section" class="bg-surface-container-lowest p-lg rounded-xl border border-outline-variant shadow-lg xl:sticky xl:top-8">
-            <div class="flex justify-between items-center mb-lg">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 md:gap-0 mb-lg">
               <div>
                 <h2 class="font-headline-xl text-headline-xl text-primary tracking-tight">Billing — <span id="billing-table-name">Select Table</span></h2>
                 <span id="billing-status" class="font-label-md text-[10px] uppercase text-on-surface-variant font-bold tracking-widest"></span>
@@ -710,7 +710,7 @@
       </button>
     </nav>
     <!-- Floating Chat Bubble Bar -->
-    <div id="terminal-console" class="lg:fixed lg:bottom-6 lg:left-[calc(50%+128px)] lg:-translate-x-1/2 lg:z-40 bg-slate-900/90 backdrop-blur-md border-t lg:border border-slate-800 text-slate-100 lg:shadow-[0_8px_32px_rgba(0,0,0,0.5)] transition-all duration-300 h-[56px] lg:rounded-full w-full lg:w-[calc(100%-32px)] lg:max-w-[600px] flex flex-col overflow-hidden pointer-events-auto">
+    <div id="terminal-console" class="lg:fixed lg:bottom-0 lg:left-64 lg:right-0 lg:z-40 bg-slate-900/90 backdrop-blur-md border-t border-slate-800 text-slate-100 lg:shadow-[0_-4px_24px_rgba(0,0,0,0.3)] transition-all duration-300 h-[56px] lg:rounded-none w-full lg:w-auto lg:max-w-none flex flex-col overflow-hidden pointer-events-auto">
     <!-- Chat Header (Visible when expanded) -->
     <div id="terminal-header" class="h-[44px] min-h-[44px] flex items-center justify-between px-4 border-b border-slate-800/60 cursor-pointer select-none bg-slate-900/40 hidden">
       <div class="flex items-center gap-2">
@@ -738,19 +738,18 @@
     </div>
 
     <!-- Chat Prompt Line (Always visible at the bottom) -->
-    <div id="terminal-prompt-line" class="h-[56px] min-h-[56px] flex items-center px-4 bg-transparent">
+    <div id="terminal-prompt-line" class="h-[56px] min-h-[56px] flex items-center pl-4 pr-1.5 bg-transparent">
       <!-- AI Sparkle Icon -->
-      <span class="material-symbols-outlined text-emerald-400 mr-3 select-none animate-pulse text-[20px]">auto_awesome</span>
+      <span class="material-symbols-outlined text-emerald-400 mr-3 select-none text-[20px]">auto_awesome</span>
       <div class="flex-1 flex items-center relative">
         <input id="terminal-input" type="text" placeholder=" What can i do for you ? " class="terminal-input-field flex-1 bg-transparent text-slate-100 border-none outline-none text-sm p-0 focus:ring-0 placeholder:text-slate-500" autocomplete="off">
-        <span id="terminal-cursor-indicator" class="terminal-cursor hidden"></span>
       </div>
-      <div class="flex items-center gap-2">
-        <button id="btn-terminal-mic" class="text-slate-400 hover:text-emerald-400 flex items-center justify-center p-1.5 transition-colors rounded-full hover:bg-slate-800/50" title="Voice command">
-          <span class="material-symbols-outlined text-[20px]">mic</span>
+      <div class="flex items-center gap-1.5 h-full py-1.5">
+        <button id="btn-terminal-mic" class="h-full aspect-square text-slate-400 hover:text-emerald-400 hover:bg-slate-800/50 flex items-center justify-center transition-colors rounded-xl" title="Voice command">
+          <span class="material-symbols-outlined text-[24px]">mic</span>
         </button>
-        <button id="btn-terminal-send" class="text-emerald-400 hover:text-emerald-300 flex items-center justify-center p-1.5 transition-colors rounded-full hover:bg-slate-800/50" title="Send message">
-          <span class="material-symbols-outlined text-[20px]">send</span>
+        <button id="btn-terminal-send" class="h-full aspect-square bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 hover:text-emerald-300 flex items-center justify-center transition-colors rounded-xl" title="Send message">
+          <span class="material-symbols-outlined text-[24px]">send</span>
         </button>
       </div>
     </div>

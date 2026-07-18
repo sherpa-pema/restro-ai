@@ -276,20 +276,7 @@ textarea:focus {
   scrollbar-color: rgba(16, 185, 129, 0.2) rgba(15, 23, 42, 0.5);
 }
 
-/* Cursor Animation */
-@keyframes terminalBlink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
-}
-.terminal-cursor {
-  display: inline-block;
-  width: 8px;
-  height: 15px;
-  background-color: #10b981; /* emerald-500 */
-  animation: terminalBlink 1.2s step-end infinite;
-  vertical-align: middle;
-  box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
-}
+
 
 /* Input Focus Bypasses Global Focus styles to stay clean */
 .terminal-input-field:focus {

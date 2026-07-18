@@ -29,8 +29,8 @@ export function initCommandBar() {
   // Toggle handlers
   const expandConsole = () => {
     isExpanded = true;
-    consoleEl.classList.remove('h-[56px]', 'lg:rounded-full', 'lg:shadow-[0_8px_32px_rgba(0,0,0,0.5)]');
-    consoleEl.classList.add('h-[60vh]', 'sm:h-[400px]', 'max-h-[400px]', 'lg:rounded-2xl', 'lg:shadow-[0_12px_40px_rgba(0,0,0,0.6)]');
+    consoleEl.classList.remove('h-[56px]');
+    consoleEl.classList.add('h-[60vh]', 'sm:h-[400px]', 'max-h-[400px]');
     if (headerEl) headerEl.classList.remove('hidden');
     bodyEl.classList.remove('hidden');
 
@@ -47,8 +47,8 @@ export function initCommandBar() {
 
   const collapseConsole = () => {
     isExpanded = false;
-    consoleEl.classList.remove('h-[60vh]', 'sm:h-[400px]', 'max-h-[400px]', 'lg:rounded-2xl', 'lg:shadow-[0_12px_40px_rgba(0,0,0,0.6)]');
-    consoleEl.classList.add('h-[56px]', 'lg:rounded-full', 'lg:shadow-[0_8px_32px_rgba(0,0,0,0.5)]');
+    consoleEl.classList.remove('h-[60vh]', 'sm:h-[400px]', 'max-h-[400px]');
+    consoleEl.classList.add('h-[56px]');
     if (headerEl) headerEl.classList.add('hidden');
     bodyEl.classList.add('hidden');
 

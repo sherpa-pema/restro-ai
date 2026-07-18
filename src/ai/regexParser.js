@@ -208,11 +208,11 @@ function tryGetStatus(input) {
     };
   }
 
-  // Revenue / sales / total
-  if (/\b(?:revenue|sales|total)\b/i.test(input)) {
+  // General status / Revenue / sales / total
+  if (/^status$/i.test(input) || /^current status$/i.test(input) || /\b(?:revenue|sales|total)\b/i.test(input)) {
     return {
       action: 'GET_STATUS',
-      target: 'revenue',
+      target: 'all',
     };
   }
 

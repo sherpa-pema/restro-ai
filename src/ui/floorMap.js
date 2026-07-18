@@ -1,7 +1,7 @@
 // Floor Map (Tables) Module for TableCraft OS
 
 import { getState, setState, on, formatPrice } from '../state.js';
-import { getAllTables, getTable, upsertTable, deleteTable, getOrderByTable, getOrderItems, getOrCreateTakeawayArchiveTable, updateOrder, getDB, isTakeawayTable, getChannelFromTableName } from '../db/indexedDB.js';
+import { getAllTables, getTable, upsertTable, deleteTable, getOrderByTable, getOrderItems, getOrCreateTakeawayArchiveTable, updateOrder, deleteOrder, getDB, isTakeawayTable, getChannelFromTableName } from '../db/indexedDB.js';
 import { queueSync } from '../db/syncEngine.js';
 import { showToast } from './toasts.js';
 import { v4 as uuidv4 } from 'uuid';
@@ -227,7 +227,7 @@ export async function renderFloorMap() {
   if (countSpan) countSpan.innerText = filteredTables.length;
 
   // Retrieve pricing and item count details for occupied tables asynchronously
-  const enrichedTables = await Promise.all(
+  let enrichedTables = await Promise.all(
     filteredTables.map(async (table) => {
       let total = 0;
       let itemCount = 0;
@@ -244,6 +244,26 @@ export async function renderFloorMap() {
           total = order.total || 0;
           const items = await getOrderItems(order.id);
           itemCount = items.reduce((sum, i) => sum + i.quantity, 0);
+
+          // Self-healing ghost orders
+          if (items.length === 0 && order.total > 0) {
+            console.warn(`[Self-Healing] Cleaning up ghost order for table ${table.name}`);
+            await deleteOrder(order.id);
+            await queueSync('orders', 'DELETE', { id: order.id });
+            
+            if (isTakeawayTable(table)) {
+              await deleteTable(table.id);
+              await queueSync('tables', 'DELETE', { id: table.id });
+              return null; // exclude from render
+            } else {
+              table.status = 'available';
+              table.current_order_id = null;
+              await upsertTable(table);
+              await queueSync('tables', 'UPDATE', table);
+              total = 0;
+            }
+          }
+
           if (!channel) {
             channel = order.channel;
             if (channel === 'Takeout') channel = 'Regular';
@@ -254,6 +274,8 @@ export async function renderFloorMap() {
       return { ...table, total, itemCount, channel };
     })
   );
+
+  enrichedTables = enrichedTables.filter(t => t !== null);
 
   // Sort tables logically by name (T1, T2, ... T10, etc.)
   // Sort tables logically by type then by name

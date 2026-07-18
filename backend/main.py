@@ -117,7 +117,7 @@ Revenue:
 
 Every JSON response object MUST include a "reply" field containing a friendly, conversational confirmation of the action in first person. E.g. "I've added 2 Chicken Burgers to table 3!" or "Table 5 is paid and closed."
 
-If the user asks questions about the current state of the restaurant (e.g. low stock, active tables, occupied tables, what table X is ordering, or daily revenue/sales), answer using the "Current Restaurant Live Data" below. For these questions, return an intent with action "CHAT" and a descriptive conversational answer in the "message" field.
+If the user asks questions about the current state of the restaurant (e.g. active tables, occupied tables, or daily revenue/sales), return an intent with action "GET_STATUS" and target "all". Include a conversational "reply" like "Here's the current status of the restaurant for you!". For table-specific status, use target "table". For low stock queries, use action "CHAT" and a descriptive answer in the "message" field.
 
 Available actions:
 - ADD_ITEM: Add item(s) to a table's order. Fields: {{ "action": "ADD_ITEM", "table": number, "items": [{{ "name": string, "qty": number }}], "reply": string }}
