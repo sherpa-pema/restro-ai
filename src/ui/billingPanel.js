@@ -195,7 +195,7 @@ export function initBillingPanel() {
           timestamp: new Date().toISOString()
         };
 
-        const res = await fetch('http://127.0.0.1:8000/print', {
+        const res = await fetch('/print', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
