@@ -26,6 +26,9 @@ import {
   getChannelFromTableName,
   deleteTable,
   isTakeawayTable,
+  deductInventoryForOrder,
+  getAllInventory,
+  getOrCreateTakeawayArchiveTable,
 } from '../db/indexedDB.js';
 
 import { queueSync } from '../db/syncEngine.js';
@@ -132,8 +135,8 @@ async function handleAddItem(intent) {
     );
 
     if (existingItem) {
-      // Increment quantity
-      existingItem.quantity += intentItem.qty;
+      // Increment quantity (defensive parsing)
+      existingItem.quantity += parseInt(intentItem.qty, 10) || 1;
       await addOrderItem(existingItem); // put (upsert)
       await queueSync('order_items', 'UPDATE', existingItem);
     } else {
@@ -145,7 +148,7 @@ async function handleAddItem(intent) {
         name: menuItem.name,
         emoji: menuItem.emoji || '🍽️',
         price: menuItem.price,
-        quantity: intentItem.qty,
+        quantity: parseInt(intentItem.qty, 10) || 1,
         notes: '',
         created_at: new Date().toISOString(),
       };
@@ -281,17 +284,45 @@ async function handlePayTable(intent) {
   await addTransaction(transaction);
   await queueSync('transactions', 'INSERT', transaction);
 
+  try {
+    const updatedInv = await deductInventoryForOrder(order.id);
+    for (const item of updatedInv) {
+      await queueSync('inventory', 'UPDATE', item);
+    }
+    if (updatedInv.length > 0) {
+      const allInv = await getAllInventory();
+      setState('inventory', allInv);
+    }
+  } catch (depletionErr) {
+    console.warn('[CommandExecutor] Inventory stock depletion failed:', depletionErr);
+  }
+
   // Close the order
   order.status = 'paid';
   order.paid_at = now;
-  await updateOrder(order);
-  await queueSync('orders', 'UPDATE', order);
+  
+  if (isTakeawayTable(table)) {
+    const { table: archiveTable, isNew } = await getOrCreateTakeawayArchiveTable();
+    if (isNew) {
+      await queueSync('tables', 'UPDATE', archiveTable);
+    }
+    order.table_id = archiveTable.id;
+    
+    await updateOrder(order);
+    await queueSync('orders', 'UPDATE', order);
 
-  // Reset the table
-  table.status = 'available';
-  table.current_order_id = null;
-  await upsertTable(table);
-  await queueSync('tables', 'UPDATE', table);
+    await deleteTable(table.id);
+    await queueSync('tables', 'DELETE', { id: table.id });
+  } else {
+    await updateOrder(order);
+    await queueSync('orders', 'UPDATE', order);
+
+    // Reset the table
+    table.status = 'available';
+    table.current_order_id = null;
+    await upsertTable(table);
+    await queueSync('tables', 'UPDATE', table);
+  }
 
   // Update app state
   const allTables = await getAllTables();
@@ -367,7 +398,8 @@ async function handleApplyDiscount(intent) {
   }
 
   const orderItems = await getOrderItems(order.id);
-  const updatedOrder = recalculateOrder(order, orderItems, intent.discount_percent);
+  const discountPercent = parseFloat(intent.discount_percent) || 0;
+  const updatedOrder = recalculateOrder(order, orderItems, discountPercent);
   await updateOrder(updatedOrder);
   await queueSync('orders', 'UPDATE', updatedOrder);
 
@@ -376,7 +408,7 @@ async function handleApplyDiscount(intent) {
 
   return {
     success: true,
-    message: `${intent.discount_percent}% discount applied to T${intent.table}`,
+    message: `${discountPercent}% discount applied to T${intent.table}`,
   };
 }
 
@@ -384,10 +416,11 @@ async function handleApplyDiscount(intent) {
  * ADD_MENU_ITEM — Add a new item to the menu.
  */
 async function handleAddMenuItem(intent) {
+  const price = parseFloat(intent.price) || 0;
   const newItem = {
     id: uuidv4(),
     name: intent.name,
-    price: intent.price,
+    price: price,
     emoji: intent.emoji || '🍽️',
     category: 'Other',
     is_active: true,
@@ -403,7 +436,7 @@ async function handleAddMenuItem(intent) {
 
   return {
     success: true,
-    message: `${intent.name} added to menu at ${formatPrice(intent.price)}`,
+    message: `${intent.name} added to menu at ${formatPrice(price)}`,
   };
 }
 
@@ -561,7 +594,8 @@ async function handleUpdateMenuPrice(intent) {
     return { success: false, message: `Menu item "${intent.name}" not found.` };
   }
 
-  target.price = intent.price;
+  const newPrice = parseFloat(intent.price) || 0;
+  target.price = newPrice;
   await addMenuItem(target);
   await queueSync('menu_items', 'UPDATE', target);
 
@@ -571,7 +605,7 @@ async function handleUpdateMenuPrice(intent) {
 
   return {
     success: true,
-    message: `Updated price of ${target.name} to ${formatPrice(intent.price)}`,
+    message: `Updated price of ${target.name} to ${formatPrice(newPrice)}`,
   };
 }
 
@@ -605,12 +639,14 @@ async function handleUpdateItemQuantity(intent) {
     return { success: false, message: `Item "${intent.item_name}" not found in order on T${intent.table}.` };
   }
 
-  if (intent.qty <= 0) {
+  const qty = parseInt(intent.qty, 10) || 0;
+
+  if (qty <= 0) {
     // Treat as removal
     await removeOrderItem(targetItem.id);
     await queueSync('order_items', 'DELETE', { id: targetItem.id });
   } else {
-    targetItem.quantity = intent.qty;
+    targetItem.quantity = qty;
     // Using addOrderItem which works like upsert
     await addOrderItem(targetItem);
     await queueSync('order_items', 'UPDATE', targetItem);
@@ -645,7 +681,7 @@ async function handleUpdateItemQuantity(intent) {
 
   return {
     success: true,
-    message: `Updated quantity of ${targetItem.name} to ${intent.qty} on T${intent.table}`,
+    message: `Updated quantity of ${targetItem.name} to ${qty} on T${intent.table}`,
   };
 }
 

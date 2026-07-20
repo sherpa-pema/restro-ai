@@ -180,7 +180,38 @@ export async function getOrderByTable(tableId) {
 /** Create a new order (put). */
 export async function createOrder(order) {
   const database = getDB();
-  const record = { ...order, id: order.id || uuidv4() };
+  order.id = order.id || uuidv4();
+
+  if (!order.bill_number) {
+    try {
+      const serverHost = window.location.hostname;
+      const res = await fetch(`http://${serverHost}:8000/next-bill`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.bill_no) {
+          order.bill_number = data.bill_no;
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to fetch bill number from Python server. Falling back to local DB.", err);
+    }
+
+    if (!order.bill_number) {
+      const all = await database.getAll('orders');
+      let max = 0;
+      for (const o of all) {
+        if (o.bill_number) {
+          const num = parseInt(o.bill_number, 10);
+          if (!isNaN(num) && num > max) {
+            max = num;
+          }
+        }
+      }
+      order.bill_number = String(max + 1).padStart(3, '0');
+    }
+  }
+
+  const record = { ...order };
   await database.put('orders', record);
 }
 
@@ -247,22 +278,38 @@ export async function getAllTransactions() {
 /** Add a transaction record. Generates ID if not provided. */
 export async function addTransaction(tx) {
   const database = getDB();
-  const record = { ...tx, id: tx.id || uuidv4() };
+  tx.id = tx.id || uuidv4();
 
-  if (!record.bill_number) {
-    const all = await database.getAll('transactions');
-    let max = 0;
-    for (const t of all) {
-      if (t.bill_number) {
-        const num = parseInt(t.bill_number, 10);
-        if (!isNaN(num) && num > max) {
-          max = num;
+  if (!tx.bill_number) {
+    try {
+      const serverHost = window.location.hostname;
+      const res = await fetch(`http://${serverHost}:8000/next-bill`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.bill_no) {
+          tx.bill_number = data.bill_no;
         }
       }
+    } catch (err) {
+      console.warn("Failed to fetch bill number from Python server. Falling back to local DB.", err);
     }
-    record.bill_number = String(max + 1).padStart(3, '0');
+
+    if (!tx.bill_number) {
+      const all = await database.getAll('transactions');
+      let max = 0;
+      for (const t of all) {
+        if (t.bill_number) {
+          const num = parseInt(t.bill_number, 10);
+          if (!isNaN(num) && num > max) {
+            max = num;
+          }
+        }
+      }
+      tx.bill_number = String(max + 1).padStart(3, '0');
+    }
   }
 
+  const record = { ...tx };
   await database.put('transactions', record);
 }
 

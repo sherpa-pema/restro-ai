@@ -80,6 +80,26 @@ class PrintRequest(BaseModel):
     total: float
     items: List[ReceiptItem]
 
+class IntentItemSchema(BaseModel):
+    name: str
+    qty: int
+
+class ParsedIntentSchema(BaseModel):
+    action: str
+    reply: Optional[str] = None
+    message: Optional[str] = None
+    table: Optional[int] = None
+    items: Optional[List[IntentItemSchema]] = None
+    item_name: Optional[str] = None
+    qty: Optional[int] = None
+    discount_percent: Optional[float] = None
+    name: Optional[str] = None
+    price: Optional[float] = None
+    emoji: Optional[str] = None
+    target: Optional[str] = None
+    from_table: Optional[int] = None
+    to_table: Optional[int] = None
+
 # ─────────────────────────────────────────────
 # Helper Functions
 # ─────────────────────────────────────────────
@@ -154,6 +174,62 @@ def parse_json_from_text(text: str) -> dict:
     return {"action": "CHAT", "message": text}
 
 # ─────────────────────────────────────────────
+# Endpoint: Bill Counter
+# ─────────────────────────────────────────────
+
+BILL_COUNTER_FILE = os.path.join(os.path.dirname(__file__), "bill_counter.json")
+
+def get_next_bill_number() -> int:
+    import datetime
+    today = datetime.date.today().isoformat()
+    
+    # Read existing
+    if os.path.exists(BILL_COUNTER_FILE):
+        try:
+            with open(BILL_COUNTER_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            data = {"date": today, "counter": 0}
+    else:
+        data = {"date": today, "counter": 0}
+        
+    # Reset if new day
+    if data.get("date") != today:
+        data = {"date": today, "counter": 0}
+        
+    # Increment
+    data["counter"] += 1
+    
+    # Save
+    with open(BILL_COUNTER_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+        
+    return data["counter"]
+
+@app.get("/health")
+async def health_check():
+    import datetime
+    last_bill = 0
+    if os.path.exists(BILL_COUNTER_FILE):
+        try:
+            with open(BILL_COUNTER_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if data.get("date") == datetime.date.today().isoformat():
+                    last_bill = data.get("counter", 0)
+        except Exception:
+            pass
+    return {"ok": True, "last_bill": last_bill}
+
+@app.get("/next-bill")
+async def get_next_bill():
+    try:
+        bill_no = get_next_bill_number()
+        return {"bill_no": f"{bill_no:03d}"}
+    except Exception as e:
+        print(f"[Backend] Error generating bill number: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate bill number")
+
+# ─────────────────────────────────────────────
 # Endpoint: AI Parser Proxy
 # ─────────────────────────────────────────────
 
@@ -207,6 +283,13 @@ async def ai_parse(req: AIParseRequest):
             
         print(f"[Backend] Raw Cerebras Content:\n{content}")
         parsed_intent = parse_json_from_text(content)
+        
+        # Enforce strict type coercion via Pydantic
+        if isinstance(parsed_intent, dict):
+            try:
+                parsed_intent = ParsedIntentSchema(**parsed_intent).model_dump(exclude_none=True)
+            except Exception as e:
+                print(f"[Backend] Schema coercion failed, falling back to raw dict: {e}")
         
         # Sanitize intent to ensure it is compatible with frontend command executor
         if not isinstance(parsed_intent, dict):

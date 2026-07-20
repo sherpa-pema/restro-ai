@@ -345,10 +345,18 @@ export async function pullAllFromCloud() {
         await addTransaction(tx);
       }
 
+      // Find the oldest timestamp among the fetched cloud transactions
+      const oldestCloudTx = cloudTransactions[cloudTransactions.length - 1];
+      const oldestCloudDate = oldestCloudTx ? new Date(oldestCloudTx.paid_at).getTime() : 0;
+
       // Cleanup local orphaned transactions not in cloud and not pending sync
       const cloudTxIds = new Set(cloudTransactions.map(t => t.id));
       for (const localTx of localTransactions) {
-        if (!cloudTxIds.has(localTx.id) && !pendingTxIds.has(localTx.id)) {
+        const localDate = new Date(localTx.paid_at).getTime();
+        
+        // Only consider it an orphan if it's newer or equal to the oldest fetched cloud transaction
+        // (If it's older, it simply wasn't fetched due to the limit)
+        if (localDate >= oldestCloudDate && !cloudTxIds.has(localTx.id) && !pendingTxIds.has(localTx.id)) {
            console.log(`[SyncEngine] Removing orphaned local transaction: ${localTx.id}`);
            await deleteTransaction(localTx.id);
         }

@@ -127,6 +127,7 @@ export async function pushOrder(order) {
     const dbOrder = {
       id: order.id,
       table_id: order.table_id,
+      bill_number: order.bill_number,
       status: order.status,
       channel: order.channel || 'Dine-in',
       subtotal: order.subtotal,
@@ -185,7 +186,7 @@ export async function pushTransaction(tx) {
     };
     const { error } = await supabase
       .from('transactions')
-      .insert(dbTx);
+      .upsert(dbTx, { onConflict: 'id' });
     if (error) throw error;
     return true;
   } catch (err) {
@@ -271,14 +272,14 @@ export async function pullOrderItems(orderId) {
   }
 }
 
-/** Pull recent transactions from Supabase (last 50, newest first). */
+/** Pull recent transactions from Supabase (fetches up to 1000 to ensure all of today's and recent history are included). */
 export async function pullTransactions() {
   try {
     const { data, error } = await supabase
       .from('transactions')
       .select('*')
       .order('paid_at', { ascending: false })
-      .limit(50);
+      .limit(1000);
     if (error) throw error;
     return data || [];
   } catch (err) {
@@ -340,7 +341,7 @@ export async function pushWaste(log) {
     };
     const { error } = await supabase
       .from('waste')
-      .insert(dbLog);
+      .upsert(dbLog, { onConflict: 'id' });
     if (error) throw error;
     return true;
   } catch (err) {
