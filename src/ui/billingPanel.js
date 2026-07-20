@@ -1,9 +1,10 @@
 // Billing Panel Module for TableCraft OS
 
 import { getState, setState, on, formatPrice } from '../state.js';
-import { getAllTables, getTable, deleteTable, upsertTable, getOrderByTable, updateOrder, deleteOrder, getOrderItems, removeOrderItem, updateOrderItem, addTransaction, getAllTransactions, getTodayTransactions, deductInventoryForOrder, getAllInventory, getOrCreateTakeawayArchiveTable, isTakeawayTable, getChannelFromTableName } from '../db/indexedDB.js';
+import { getAllTables, getTable, deleteTable, upsertTable, getOrderByTable, updateOrder, deleteOrder, getOrderItems, removeOrderItem, updateOrderItem, addTransaction, getAllTransactions, getTodayTransactions, deductInventoryForOrder, getAllInventory, getOrCreateTakeawayArchiveTable, isTakeawayTable, getChannelFromTableName, getAllOrders } from '../db/indexedDB.js';
 import { queueSync } from '../db/syncEngine.js';
 import { showToast } from './toasts.js';
+import { escapeHTML } from '../utils/security.js';
 import { v4 as uuidv4 } from 'uuid';
 
 /**
@@ -434,14 +435,16 @@ export function renderBillingPanel() {
   if (itemsContainer) {
     itemsContainer.innerHTML = items.map((item, index) => {
       const { baseName, note } = parseItemName(item.name);
+      const safeBaseName = escapeHTML(baseName);
+      const safeNote = escapeHTML(note);
       return `
         <tr class="group hover:bg-surface-container transition-colors">
           <td class="p-2 text-center font-mono-md text-on-surface-variant">${index + 1}.</td>
           <td class="p-2 font-body-sm max-w-[120px] break-words whitespace-normal">
-            <div class="font-medium whitespace-normal break-words">${baseName}</div>
+            <div class="font-medium whitespace-normal break-words">${safeBaseName}</div>
             ${note ? `
             <div class="text-[10px] text-amber-600 flex justify-between items-center pr-2 mt-0.5">
-              <span>Note: ${note}</span>
+              <span>Note: ${safeNote}</span>
               <button class="edit-note-btn text-primary hover:underline" data-edit-note-id="${item.id}" title="Edit Note">
                 <span class="material-symbols-outlined text-[12px]">edit</span>
               </button>

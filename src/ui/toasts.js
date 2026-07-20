@@ -1,4 +1,5 @@
 // Toast Notification System for TableCraft OS
+import { escapeHTML } from '../utils/security.js';
 
 /**
  * Display a toast notification on the screen.
@@ -33,7 +34,7 @@ export function showToast(message, type = 'success') {
   
   toast.innerHTML = `
     <span class="material-symbols-outlined text-[20px]">${icon}</span>
-    <span class="flex-1">${message}</span>
+    <span class="flex-1">${escapeHTML(message)}</span>
     <button class="material-symbols-outlined text-[16px] opacity-70 hover:opacity-100 transition-opacity ml-2" onclick="this.parentElement.remove()">close</button>
   `;
 

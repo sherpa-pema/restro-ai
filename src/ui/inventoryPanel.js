@@ -16,6 +16,7 @@ import {
 } from '../db/indexedDB.js';
 import { queueSync } from '../db/syncEngine.js';
 import { showToast } from './toasts.js';
+import { escapeHTML } from '../utils/security.js';
 import { v4 as uuidv4 } from 'uuid';
 
 // Current active sub-tab inside inventory page
@@ -175,7 +176,7 @@ function renderStockDirectory() {
 
     // Resolve supplier name
     const supplier = suppliers.find(s => s.id === item.supplier_id);
-    const supplierName = supplier ? supplier.name : '<span class="text-on-surface-variant italic">None</span>';
+    const supplierName = supplier ? escapeHTML(supplier.name) : '<span class="text-on-surface-variant italic">None</span>';
 
     // Status pill HTML
     const statusPill = isLow 
@@ -186,7 +187,7 @@ function renderStockDirectory() {
 
     return `
       <tr class="hover:bg-surface-container-low transition-colors ${rowBg}">
-        <td class="p-md font-bold text-primary">${item.ingredient_name}</td>
+        <td class="p-md font-bold text-primary">${escapeHTML(item.ingredient_name)}</td>
         <td class="p-md text-on-surface-variant">${item.category || 'General'}</td>
         <td class="p-md text-right font-mono-md font-bold ${isLow ? 'text-error' : 'text-primary'}">${item.current_stock}</td>
         <td class="p-md text-on-surface-variant font-medium">${item.unit}</td>
@@ -588,7 +589,7 @@ function openStockInModal() {
     return;
   }
 
-  select.innerHTML = inventory.map(item => `<option value="${item.id}">${item.ingredient_name}</option>`).join('');
+  select.innerHTML = inventory.map(item => `<option value="${item.id}">${escapeHTML(item.ingredient_name)}</option>`).join('');
   qtyInput.value = 1.0;
 
   // Hydrate first item's metadata
@@ -615,7 +616,7 @@ function openReconcileModal() {
     return;
   }
 
-  select.innerHTML = inventory.map(item => `<option value="${item.id}">${item.ingredient_name}</option>`).join('');
+  select.innerHTML = inventory.map(item => `<option value="${item.id}">${escapeHTML(item.ingredient_name)}</option>`).join('');
   
   const first = inventory[0];
   if (unitLabel) unitLabel.innerText = first.unit;
@@ -757,7 +758,7 @@ function renderRecipeMapping() {
       selectIngredient.innerHTML = '<option value="">No ingredients loaded</option>';
       if (unitDisplay) unitDisplay.innerText = 'units';
     } else {
-      selectIngredient.innerHTML = inventory.map(item => `<option value="${item.id}">${item.ingredient_name}</option>`).join('');
+      selectIngredient.innerHTML = inventory.map(item => `<option value="${item.id}">${escapeHTML(item.ingredient_name)}</option>`).join('');
       if (unitDisplay && inventory[0]) unitDisplay.innerText = inventory[0].unit;
     }
   }
@@ -835,7 +836,7 @@ function renderRecipeMapping() {
   ingredientsBody.innerHTML = itemRecipes.map(recipe => {
     // Resolve ingredient details
     const ingredient = inventory.find(i => i.id === recipe.ingredient_id);
-    const ingredientName = ingredient ? ingredient.ingredient_name : '<span class="text-error font-bold italic">Missing Ingredient</span>';
+    const ingredientName = ingredient ? escapeHTML(ingredient.ingredient_name) : '<span class="text-error font-bold italic">Missing Ingredient</span>';
     const category = ingredient ? ingredient.category : 'General';
     const unit = ingredient ? ingredient.unit : 'pcs';
     const costContrib = ingredient ? (Number(recipe.quantity) * Number(ingredient.unit_cost)) : 0;

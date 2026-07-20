@@ -3,6 +3,7 @@ import { getState, setState, on, formatPrice, getLocalDateString } from '../stat
 import { getAllTables, getOrderByTable, getOrderItems, getAllOrders, getAllInventory, getTodayWaste, upsertInventory, addWasteLog } from '../db/indexedDB.js';
 import { queueSync } from '../db/syncEngine.js';
 import { showToast } from './toasts.js';
+import { escapeHTML } from '../utils/security.js';
 import { v4 as uuidv4 } from 'uuid';
 
 /**
@@ -160,7 +161,7 @@ function populateWasteModalIngredients() {
       return;
     }
 
-    selectIngredient.innerHTML = inv.map(item => `<option value="${item.id}">${item.ingredient_name} (Stock: ${item.current_stock} ${item.unit})</option>`).join('');
+    selectIngredient.innerHTML = inv.map(item => `<option value="${item.id}">${escapeHTML(item.ingredient_name)} (Stock: ${item.current_stock} ${item.unit})</option>`).join('');
     
     // Set initial unit label
     const firstItem = inv[0];
@@ -444,7 +445,7 @@ function renderLowStockAlerts(inventory) {
     <div class="p-md bg-error/5 rounded-xl border border-error/20 flex justify-between items-center relative overflow-hidden">
       <div class="absolute left-0 top-0 bottom-0 w-1 bg-error animate-pulse"></div>
       <div>
-        <h5 class="font-headline-md text-headline-md text-primary font-bold">${item.ingredient_name}</h5>
+        <h5 class="font-headline-md text-headline-md text-primary font-bold">${escapeHTML(item.ingredient_name)}</h5>
         <p class="text-[11px] text-on-surface-variant font-mono-md">Current: <span class="text-error font-bold">${item.current_stock}</span> / Min: ${item.reorder_threshold} ${item.unit}</p>
       </div>
       <span class="text-[10px] font-bold uppercase tracking-wider text-error bg-error/15 px-2 py-0.5 rounded animate-pulse">Low Stock</span>
@@ -468,7 +469,7 @@ function renderInventoryQuickAdjust(inventory) {
     return `
       <div class="p-md bg-surface-container rounded-xl border flex flex-col justify-between ${borderClass} transition-colors min-h-[90px]">
         <div>
-          <p class="text-[11px] font-bold text-primary truncate" title="${item.ingredient_name}">${item.ingredient_name}</p>
+          <p class="text-[11px] font-bold text-primary truncate" title="${escapeHTML(item.ingredient_name)}">${escapeHTML(item.ingredient_name)}</p>
           <p class="text-[12px] font-mono-md font-bold mt-1 text-on-surface-variant">${item.current_stock} <span class="text-[10px] font-normal font-sans">${item.unit}</span></p>
         </div>
         <button data-refill-id="${item.id}" class="w-full mt-2 py-1 bg-primary text-on-primary rounded text-[10px] font-bold hover:opacity-90 active:scale-[0.98] transition-all flex items-center justify-center gap-0.5">

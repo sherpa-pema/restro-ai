@@ -6,6 +6,7 @@ import { parseCommandWithAI } from '../ai/cerebras.js';
 import { parseCommandWithRegex } from '../ai/regexParser.js';
 import { executeCommand } from '../ai/commandExecutor.js';
 import { showToast } from './toasts.js';
+import { escapeHTML } from '../utils/security.js';
 
 let commandHistory = [];
 let historyIndex = -1;
@@ -158,18 +159,6 @@ export function initCommandBar() {
     
     bodyEl.appendChild(line);
     bodyEl.scrollTop = bodyEl.scrollHeight;
-  };
-
-  const escapeHTML = (str) => {
-    return str.replace(/[&<>'"]/g, 
-      tag => ({
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        "'": '&#39;',
-        '"': '&quot;'
-      }[tag] || tag)
-    );
   };
 
   // Process and Submit Command
