@@ -145,14 +145,26 @@ export async function syncNow() {
 
     console.log(`[SyncEngine] Processing ${queue.length} queued operations...`);
     let hadFailure = false;
+    const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
 
     for (const entry of queue) {
-      const success = await processQueueEntry(entry);
-      if (success) {
+      const result = await processQueueEntry(entry);
+      if (result === true) {
+        await clearSyncQueueEntry(entry.id);
+      } else if (result === 'DISCARD') {
+        // Permanently unresolvable (FK violation, missing parent, conflict after cloud reset)
+        console.warn(`[SyncEngine] Discarding unresolvable queue entry ${entry.id} (${entry.table}/${entry.action}) — parent record no longer exists in cloud.`);
         await clearSyncQueueEntry(entry.id);
       } else {
-        hadFailure = true;
-        console.warn(`[SyncEngine] Failed to sync entry ${entry.id}:`, entry);
+        const entryAge = entry.created_at ? new Date(entry.created_at).getTime() : 0;
+        if (entryAge < oneDayAgo) {
+          // Stale entry — discard silently
+          console.warn(`[SyncEngine] Discarding stale queue entry ${entry.id} (${entry.table}/${entry.action}, created ${entry.created_at})`);
+          await clearSyncQueueEntry(entry.id);
+        } else {
+          hadFailure = true;
+          console.warn(`[SyncEngine] Failed to sync entry ${entry.id}:`, entry);
+        }
       }
     }
 
@@ -192,8 +204,35 @@ async function processQueueEntry(entry) {
     }
 
     const result = await pushFn(data);
-    return result !== null;
+
+    // null means the push function caught an error internally
+    if (result === null) {
+      // We cannot inspect the error here because pushFn swallows it.
+      // As a safety net, check if this is a transaction/order_item whose parent
+      // order no longer exists locally (meaning it was cleaned up by reconcile).
+      if ((table === 'transactions' || table === 'order_items') && data.order_id) {
+        const { getOrder } = await import('./indexedDB.js');
+        const parentOrder = await getOrder(data.order_id);
+        if (!parentOrder) {
+          // Parent order was deleted locally too — permanently unresolvable.
+          return 'DISCARD';
+        }
+      }
+      return false;
+    }
+
+    return true;
   } catch (err) {
+    // Detect permanent FK violation (parent deleted upstream)
+    if (err && (err.code === '23503' || (err.message && err.message.includes('fkey')))) {
+      console.warn(`[SyncEngine] FK violation for ${table}/${action} — discarding entry.`);
+      return 'DISCARD';
+    }
+    // Detect duplicate/conflict on a record whose parent no longer exists
+    if (err && (err.code === '23505' || err.status === 409 || err.code === '409')) {
+      console.warn(`[SyncEngine] Conflict/duplicate for ${table}/${action} — discarding entry.`);
+      return 'DISCARD';
+    }
     console.error(`[SyncEngine] processQueueEntry failed for ${table}/${action}:`, err);
     return false;
   }
@@ -258,13 +297,19 @@ export async function pullAllFromCloud() {
       upsertRecipe,
       getAllSuppliers,
       getAllRecipes,
-      upsertRestaurant
+      upsertRestaurant,
+      deleteOrder,
+      removeOrderItem
     } = await import('./indexedDB.js');
 
     // 1. Pull and Reconcile Tables
     const cloudTables = await pullTables();
     if (cloudTables && cloudTables.length > 0) {
       const localTables = await getAllTables();
+
+      // Pre-fetch cloud order IDs to cross-check occupied status
+      const cloudOrdersForCheck = await pullOrders();
+      const cloudOrderIdSet = new Set((cloudOrdersForCheck || []).map(o => o.id));
       
       for (const table of cloudTables) {
         // Find all local tables with same name but different ID
@@ -292,6 +337,19 @@ export async function pullAllFromCloud() {
             }
           }
         }
+
+        // ── Ghost-occupied guard ──────────────────────────────────────────────
+        // If the cloud table says 'occupied' but the referenced order no longer
+        // exists in Supabase (deleted by the user), reset it to 'available'.
+        if (table.status === 'occupied' && table.current_order_id && !cloudOrderIdSet.has(table.current_order_id)) {
+          console.warn(`[SyncEngine] Resetting ghost-occupied table ${table.name} — order ${table.current_order_id} not found in cloud.`);
+          table.status = 'available';
+          table.current_order_id = null;
+          // Reset locally and push the correction directly to Supabase
+          await upsertTable(table);
+          const { pushTable } = await import('./supabase.js');
+          await pushTable(table);
+        }
         
         // Write/update the cloud table structure in IDB
         await upsertTable(table);
@@ -307,15 +365,17 @@ export async function pullAllFromCloud() {
     const cloudMenuItems = await pullMenuItems();
     if (cloudMenuItems && cloudMenuItems.length > 0) {
       const localMenu = await getAllMenuItems();
+      const reconciledNames = new Set();
       
       for (const item of cloudMenuItems) {
-        const localMatches = localMenu.filter(m => m.name === item.name && m.id !== item.id);
-        
-        for (const localMatch of localMatches) {
-          console.log(`[SyncEngine] Aligning menu item "${item.name}" ID: ${localMatch.id} -> ${item.id}`);
-          await deleteMenuItem(localMatch.id);
+        if (!reconciledNames.has(item.name)) {
+          const localMatches = localMenu.filter(m => m.name === item.name && m.id !== item.id);
+          for (const localMatch of localMatches) {
+            console.log(`[SyncEngine] Aligning menu item "${item.name}" ID: ${localMatch.id} -> ${item.id}`);
+            await deleteMenuItem(localMatch.id);
+          }
+          reconciledNames.add(item.name);
         }
-        
         await addMenuItem(item);
       }
       
@@ -328,7 +388,7 @@ export async function pullAllFromCloud() {
     // 3. Pull transactions
     const cloudTransactions = await pullTransactions();
     if (cloudTransactions) { // removed .length > 0 check to allow empty cloud state sync
-      const { getAllTransactions, deleteTransaction, getSyncQueue } = await import('./indexedDB.js');
+      const { getAllTransactions, deleteTransaction, getSyncQueue, clearSyncQueueEntry: clearEntry } = await import('./indexedDB.js');
       const localTransactions = await getAllTransactions();
       const syncQueue = await getSyncQueue();
       const pendingTxIds = new Set(syncQueue.filter(q => q.table === 'transactions').map(q => q.data.id));
@@ -361,6 +421,24 @@ export async function pullAllFromCloud() {
            await deleteTransaction(localTx.id);
         }
       }
+
+      // ── Sweep sync queue for orphaned transaction/order_item entries ──────────
+      // After a cloud reset (empty orders + empty transactions), any queued
+      // INSERT for transactions or order_items whose order_id is not in cloud
+      // will never succeed. Discard them now to prevent infinite retry loops.
+      if (cloudTransactions.length === 0) {
+        const cloudOrderIds = new Set((await pullOrders() || []).map(o => o.id));
+        const orphanedQueueEntries = syncQueue.filter(q =>
+          (q.table === 'transactions' || q.table === 'order_items') &&
+          q.action === 'INSERT' &&
+          q.data.order_id &&
+          !cloudOrderIds.has(q.data.order_id)
+        );
+        for (const orphan of orphanedQueueEntries) {
+          console.warn(`[SyncEngine] Sweeping orphaned queue entry ${orphan.id} (${orphan.table}) — parent order deleted from cloud.`);
+          await clearEntry(orphan.id);
+        }
+      }
       
       const { getTodayTransactions } = await import('./indexedDB.js');
       const todayTx = await getTodayTransactions();
@@ -369,9 +447,14 @@ export async function pullAllFromCloud() {
     }
 
     // 4. Pull and Reconcile Orders (Needed for dashboard analytics)
+    // NOTE: Guard is intentionally `!= null` (not `length > 0`) so that an empty
+    // cloud response correctly sweeps stale local orders after a Supabase reset.
     const cloudOrders = await pullOrders();
-    if (cloudOrders && cloudOrders.length > 0) {
+    if (cloudOrders != null) {
       const { getOrder } = await import('./indexedDB.js');
+      const cloudOrderIdSet = new Set(cloudOrders.map(o => o.id));
+
+      // Upsert all cloud orders locally
       for (const order of cloudOrders) {
         const local = await getOrder(order.id);
         const merged = {
@@ -380,9 +463,26 @@ export async function pullAllFromCloud() {
         };
         await createOrder(merged);
       }
+
+      // ── Sweep orphaned local open orders ─────────────────────────────────────
+      // Any local order with status 'open' that isn't in the cloud set is stale
+      // (e.g. left over after user deleted orders directly in Supabase).
+      const localOrders = await getAllOrders();
+      for (const localOrder of localOrders) {
+        if (localOrder.status === 'open' && !cloudOrderIdSet.has(localOrder.id)) {
+          console.warn(`[SyncEngine] Removing orphaned local open order ${localOrder.id} (table: ${localOrder.table_id})`);
+          // Delete associated order items first
+          const orphanItems = await getOrderItems(localOrder.id);
+          for (const item of orphanItems) {
+            await removeOrderItem(item.id);
+          }
+          await deleteOrder(localOrder.id);
+        }
+      }
+
       const allOrders = await getAllOrders();
       setState('orders', allOrders);
-      console.log(`[SyncEngine] Synced ${cloudOrders.length} orders`);
+      console.log(`[SyncEngine] Synced ${cloudOrders.length} orders (swept ${localOrders.filter(o => o.status === 'open' && !cloudOrderIdSet.has(o.id)).length} orphans)`);
     }
 
     // 5. Pull and Reconcile Inventory

@@ -124,12 +124,13 @@ export async function uploadMenuImage(file, category, itemName) {
 /** Upsert an order to Supabase. */
 export async function pushOrder(order) {
   try {
+    // channel is omitted intentionally — Supabase uses its DB default.
+    // The local channel field is used only for UI grouping and revenue charts.
     const dbOrder = {
       id: order.id,
       table_id: order.table_id,
       bill_number: order.bill_number,
       status: order.status,
-      channel: order.channel || 'Dine-in',
       subtotal: order.subtotal,
       tax: order.tax,
       service_charge: order.service_charge,
@@ -149,6 +150,7 @@ export async function pushOrder(order) {
   }
 }
 
+
 /** Upsert an order item to Supabase. */
 export async function pushOrderItem(item) {
   try {
@@ -163,7 +165,23 @@ export async function pushOrderItem(item) {
     const { error } = await supabase
       .from('order_items')
       .upsert(dbItem, { onConflict: 'id' });
-    if (error) throw error;
+
+    if (error) {
+      if (error.code === '23503' || (error.message && error.message.includes('order_items_order_id_fkey'))) {
+        const { getOrder } = await import('./indexedDB.js');
+        const parentOrder = await getOrder(item.order_id);
+        if (parentOrder) {
+          const parentSuccess = await pushOrder(parentOrder);
+          if (parentSuccess) {
+            const { error: retryErr } = await supabase
+              .from('order_items')
+              .upsert(dbItem, { onConflict: 'id' });
+            if (!retryErr) return true;
+          }
+        }
+      }
+      throw error;
+    }
     return true;
   } catch (err) {
     console.error('[Supabase] pushOrderItem failed:', err);
@@ -187,7 +205,25 @@ export async function pushTransaction(tx) {
     const { error } = await supabase
       .from('transactions')
       .upsert(dbTx, { onConflict: 'id' });
-    if (error) throw error;
+
+    if (error) {
+      if (error.code === '23503' || (error.message && error.message.includes('transactions_order_id_fkey'))) {
+        if (tx.order_id) {
+          const { getOrder } = await import('./indexedDB.js');
+          const parentOrder = await getOrder(tx.order_id);
+          if (parentOrder) {
+            const parentSuccess = await pushOrder(parentOrder);
+            if (parentSuccess) {
+              const { error: retryErr } = await supabase
+                .from('transactions')
+                .upsert(dbTx, { onConflict: 'id' });
+              if (!retryErr) return true;
+            }
+          }
+        }
+      }
+      throw error;
+    }
     return true;
   } catch (err) {
     console.error('[Supabase] pushTransaction failed:', err);
@@ -305,7 +341,24 @@ export async function pushInventory(item) {
     const { error } = await supabase
       .from('inventory')
       .upsert(dbItem, { onConflict: 'id' });
-    if (error) throw error;
+
+    if (error) {
+      if (error.code === '23505' || (error.message && error.message.includes('inventory_ingredient_name_key'))) {
+        const { error: updateErr } = await supabase
+          .from('inventory')
+          .update({
+            current_stock: dbItem.current_stock,
+            unit: dbItem.unit,
+            reorder_threshold: dbItem.reorder_threshold,
+            unit_cost: dbItem.unit_cost,
+            supplier_id: dbItem.supplier_id,
+            updated_at: dbItem.updated_at
+          })
+          .eq('ingredient_name', item.ingredient_name);
+        if (!updateErr) return true;
+      }
+      throw error;
+    }
     return true;
   } catch (err) {
     console.error('[Supabase] pushInventory failed:', err);
