@@ -7,7 +7,7 @@ import { setState } from '../state.js';
  */
 export async function registerBusiness(email, password, businessName, adminName) {
   try {
-    // 1. Sign up the user (this automatically logs them in via Supabase)
+    // 1. Sign up the user
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
       password,
@@ -16,7 +16,15 @@ export async function registerBusiness(email, password, businessName, adminName)
     if (authError) throw authError;
     if (!authData.user) throw new Error("Failed to create user.");
 
-    // 2. Insert staff profile (Admin)
+    // 2. If email confirmation is required, session will be null.
+    //    In that case we cannot insert staff_profiles (RLS requires authenticated role).
+    //    Return early and ask the user to confirm their email first.
+    if (!authData.session) {
+      console.warn("[Auth] signUp returned no session — email confirmation likely required.");
+      return { success: true, needsEmailConfirmation: true };
+    }
+
+    // 3. Insert staff profile (Admin) — check for errors instead of swallowing
     const profile = {
       id: authData.user.id,
       email,
@@ -24,12 +32,16 @@ export async function registerBusiness(email, password, businessName, adminName)
       role: 'admin',
       is_active: true
     };
-    await supabase.from('staff_profiles').insert(profile);
+    const { error: profileError } = await supabase.from('staff_profiles').insert(profile);
+    if (profileError) {
+      console.error("[Auth] staff_profiles insert failed:", profileError);
+      throw new Error(`Profile creation failed: ${profileError.message}`);
+    }
     
     // Save to local IndexedDB
     await upsertStaffProfile(profile);
 
-    // 3. Insert/update Restaurant Profile
+    // 4. Insert/update Restaurant Profile
     const { pushRestaurantProfile } = await import('./supabase.js');
     const { getRestaurantProfile, upsertRestaurant } = await import('./indexedDB.js');
     
@@ -40,12 +52,12 @@ export async function registerBusiness(email, password, businessName, adminName)
     }
     rest.business_name = businessName;
     rest.address = 'Not provided';
-    rest.admin_user_id = authData.user.id; // tie it to admin
+    rest.admin_user_id = authData.user.id;
     
     await pushRestaurantProfile(rest);
     await upsertRestaurant(rest);
 
-    // 4. Set state and cache session
+    // 5. Set state and cache session (only when session actually exists)
     const sessionData = {
       ...authData.session,
       role: 'admin',
@@ -129,17 +141,29 @@ export async function toggleStaffStatus(staffId, isActive) {
  * Login a user.
  */
 export async function loginUser(email, password) {
+  console.log('[Auth] loginUser() called for:', email);
   try {
+    console.log('[Auth] Calling signInWithPassword...');
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    console.log('[Auth] signInWithPassword returned. Error:', error, 'Session:', !!data?.session);
     if (error) throw error;
     if (!data.session) throw new Error("No session returned.");
 
-    // Fetch role from staff_profiles
-    const { data: profileData, error: profileError } = await supabase
+    // Fetch role from staff_profiles (with timeout to prevent hanging)
+    console.log('[Auth] Querying staff_profiles for user:', data.user.id);
+    const profileQuery = supabase
       .from('staff_profiles')
       .select('role, display_name, is_active')
       .eq('id', data.user.id)
       .single();
+
+    const { data: profileData, error: profileError } = await Promise.race([
+      profileQuery,
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Profile lookup timed out. Please try again.')), 10000)
+      )
+    ]);
+    console.log('[Auth] staff_profiles query returned. Error:', profileError, 'Data:', profileData);
 
     if (profileError) throw profileError;
     if (!profileData.is_active) {
@@ -153,12 +177,16 @@ export async function loginUser(email, password) {
       display_name: profileData.display_name
     };
 
-    await saveCurrentSession(sessionData);
+    // Cache session in background — don't block login if IndexedDB hangs
+    saveCurrentSession(sessionData).catch(err =>
+      console.warn('[Auth] Session caching failed (non-fatal):', err)
+    );
     
     setState('currentUser', data.session);
     setState('userRole', profileData.role);
     setState('authState', 'authenticated');
 
+    console.log('[Auth] loginUser() completed successfully. Role:', profileData.role);
     return { success: true, role: profileData.role };
   } catch (error) {
     console.error("[Auth] Login failed:", error);

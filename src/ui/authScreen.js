@@ -109,29 +109,45 @@ export function initAuthScreen() {
     btnSubmit.classList.add('opacity-70');
     submitText.innerText = 'Please wait...';
 
-    if (currentMode === 'login') {
-      const res = await loginUser(email, password);
-      if (res.success) {
-        showToast('Successfully logged in!', 'success');
-        // State listeners will handle hiding the page
-      } else {
-        showToast(res.error || 'Login failed', 'error');
-      }
-    } else {
-      const bName = bNameInput.value.trim();
-      const aName = aNameInput.value.trim();
-      const res = await registerBusiness(email, password, bName, aName);
-      if (res.success) {
-        showToast('Business registered successfully!', 'success');
-      } else {
-        showToast(res.error || 'Registration failed', 'error');
-      }
-    }
+    try {
+      // Timeout wrapper — reject after 15s to prevent infinite hang
+      const withTimeout = (promise) => Promise.race([
+        promise,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Request timed out, please try again.')), 15000)
+        )
+      ]);
 
-    // Reset UI loading state
-    btnSubmit.disabled = false;
-    btnSubmit.classList.remove('opacity-70');
-    submitText.innerText = currentMode === 'login' ? 'Sign In' : 'Register Business';
+      if (currentMode === 'login') {
+        console.log('[AuthScreen] Calling loginUser...');
+        const res = await withTimeout(loginUser(email, password));
+        console.log('[AuthScreen] loginUser resolved:', res);
+        if (res.success) {
+          showToast('Successfully logged in!', 'success');
+        } else {
+          showToast(res.error || 'Login failed', 'error');
+        }
+      } else {
+        const bName = bNameInput.value.trim();
+        const aName = aNameInput.value.trim();
+        const res = await withTimeout(registerBusiness(email, password, bName, aName));
+        if (res.success && res.needsEmailConfirmation) {
+          showToast('Account created! Please check your email and confirm before logging in.', 'info');
+        } else if (res.success) {
+          showToast('Business registered successfully!', 'success');
+        } else {
+          showToast(res.error || 'Registration failed', 'error');
+        }
+      }
+    } catch (err) {
+      console.error('[AuthScreen] Submit handler caught error:', err);
+      showToast(err.message || 'Something went wrong, please try again.', 'error');
+    } finally {
+      console.log('[AuthScreen] Finally block — resetting button state');
+      btnSubmit.disabled = false;
+      btnSubmit.classList.remove('opacity-70');
+      submitText.innerText = currentMode === 'login' ? 'Sign In' : 'Register Business';
+    }
   });
 
   // Listen to authState to toggle visibility
