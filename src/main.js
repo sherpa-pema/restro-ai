@@ -38,8 +38,11 @@ import {
 } from './db/indexedDB.js';
 import { initSupabase, subscribeToChanges } from './db/supabase.js';
 import { initSyncEngine, pullAllFromCloud, queueSync } from './db/syncEngine.js';
+import { checkSession } from './db/auth.js';
 import { setState, getState } from './state.js';
+import { initAuthScreen } from './ui/authScreen.js';
 import { initSidebar } from './ui/sidebar.js';
+import { initStaffPanel } from './ui/staffPanel.js';
 import { initFloorMap, renderFloorMap } from './ui/floorMap.js';
 import { initMenuPanel, renderMenuPanel } from './ui/menuPanel.js';
 import { initBillingPanel } from './ui/billingPanel.js';
@@ -135,6 +138,12 @@ async function bootstrap() {
     // 1. Open/Create Local database
     await initDB();
     
+    // 1.2 Initialize Auth UI
+    initAuthScreen();
+    
+    // 1.5 Check Auth Session (will set authState in state.js)
+    await checkSession();
+    
     // 2. Hydrate defaults if required
     await seedDefaultData();
     
@@ -165,8 +174,9 @@ async function bootstrap() {
       console.warn('[App] Overview and inventory data load skipped:', e.message);
     }
     
-    // 4. Initialize UI listeners and controls
+    // 4. Initialize UI Components
     initSidebar();
+    initStaffPanel();
     initFloorMap();
     initMenuPanel();
     initBillingPanel();

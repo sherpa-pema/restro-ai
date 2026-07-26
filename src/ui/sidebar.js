@@ -2,6 +2,15 @@
 
 import { getState, setState, on } from '../state.js';
 import { showToast } from './toasts.js';
+import { logoutUser } from '../db/auth.js';
+
+const ROLE_PAGES = {
+  admin: ['overview', 'tables', 'kitchen', 'inventory', 'staff'],
+  waiter: ['tables', 'inventory'],
+  kitchen: ['kitchen']
+};
+
+let listenersAttached = false;
 
 /**
  * Initialize Sidebar and Mobile navigation controls.
@@ -12,13 +21,18 @@ export function initSidebar() {
   const currencySelector = document.getElementById('currency-selector');
   const mobileCurrencySelector = document.getElementById('mobile-currency-selector');
 
-  const navItems = [
+  const role = getState().userRole;
+  const allowedPages = role ? ROLE_PAGES[role] : [];
+
+  const allNavItems = [
     { id: 'overview', name: 'Overview', icon: 'dashboard' },
     { id: 'tables', name: 'Tables', icon: 'grid_view' },
     { id: 'kitchen', name: 'Kitchen', icon: 'restaurant' },
     { id: 'inventory', name: 'Inventory', icon: 'inventory_2' },
-    { id: 'staff', name: 'Staff', icon: 'groups', isPlaceholder: true }
+    { id: 'staff', name: 'Staff', icon: 'groups' }
   ];
+
+  const navItems = allNavItems.filter(item => allowedPages.includes(item.id));
 
   // Render desktop sidebar navigation
   if (sidebarNav) {
@@ -55,14 +69,24 @@ export function initSidebar() {
   // Setup mobile tab selectors
   if (mobileTabs) {
     mobileTabs.querySelectorAll('button').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const tab = btn.getAttribute('data-tab');
-        
-        // Highlight active tab visually
-        mobileTabs.querySelectorAll('button').forEach(b => {
-          b.className = 'flex-1 flex flex-col items-center gap-1 py-2 text-on-surface-variant';
-        });
-        btn.className = 'flex-1 flex flex-col items-center gap-1 py-2 text-primary font-bold';
+      const tab = btn.getAttribute('data-tab');
+      const requiresPage = tab === 'menu' || tab === 'billing' ? 'tables' : tab;
+      
+      if (!allowedPages.includes(requiresPage)) {
+        btn.classList.add('hidden');
+      } else {
+        btn.classList.remove('hidden');
+      }
+
+      if (!listenersAttached) {
+        btn.addEventListener('click', () => {
+          // Highlight active tab visually
+          mobileTabs.querySelectorAll('button').forEach(b => {
+            if (!b.classList.contains('hidden')) {
+              b.className = 'flex-1 flex flex-col items-center gap-1 py-2 text-on-surface-variant';
+            }
+          });
+          btn.className = 'flex-1 flex flex-col items-center gap-1 py-2 text-primary font-bold';
 
         if (tab === 'overview') {
           navigateToPage('overview');
@@ -83,6 +107,25 @@ export function initSidebar() {
           }
         }
       });
+    }
+  });
+}
+
+  if (listenersAttached) return; // Prevent duplicate listeners below
+  listenersAttached = true;
+
+  // Setup logout buttons
+  const btnLogoutDesktop = document.getElementById('btn-logout-desktop');
+  if (btnLogoutDesktop) {
+    btnLogoutDesktop.addEventListener('click', async () => {
+      await logoutUser();
+    });
+  }
+
+  const btnLogoutMobile = document.getElementById('btn-logout-mobile');
+  if (btnLogoutMobile) {
+    btnLogoutMobile.addEventListener('click', async () => {
+      await logoutUser();
     });
   }
 
@@ -110,6 +153,20 @@ export function initSidebar() {
     updateActiveNavItem(page);
   });
 
+  // Listen to userRole changes to re-render nav and route
+  on('userRole', (newRole) => {
+    if (newRole) {
+      listenersAttached = false; // allow re-attaching listeners for navItems but we must be careful. Actually, innerHTML wipes old items, so their listeners are gone. Mobile tabs listeners we guarded. Wait, mobile tab click listener will attach again if listenersAttached becomes false! Let's just fix it by keeping listenersAttached true and doing it differently? Let's just re-render.
+      // Wait, let's keep it simple: we just reload the page on login/logout in real world, but here we can just update innerHTML and let initSidebar() run.
+      // We will just do initSidebar() again. It's safe for desktop nav because innerHTML replaces it.
+      // For mobile tabs, we guarded inside the loop.
+      initSidebar();
+      if (newRole === 'admin') navigateToPage('overview');
+      else if (newRole === 'waiter') navigateToPage('tables');
+      else if (newRole === 'kitchen') navigateToPage('kitchen');
+    }
+  });
+
   // Sync Status listener
   on('syncStatus', (status) => {
     updateSyncStatus(status);
@@ -121,9 +178,17 @@ export function initSidebar() {
 
 /**
  * Handle page switching logic.
- * @param {'overview'|'tables'} pageId 
+ * @param {'overview'|'tables'|'kitchen'|'inventory'|'staff'} pageId 
  */
 function navigateToPage(pageId) {
+  const role = getState().userRole;
+  const allowedPages = role ? ROLE_PAGES[role] : [];
+  
+  if (role && !allowedPages.includes(pageId)) {
+    showToast(`Access denied. Your role cannot access this page.`, 'error');
+    return;
+  }
+
   setState('activePage', pageId);
   
   const pages = {

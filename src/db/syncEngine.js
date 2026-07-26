@@ -37,7 +37,9 @@ import {
   pushRecipe,
   pullRecipes,
   pushRestaurantProfile,
-  pullRestaurantProfile
+  pullRestaurantProfile,
+  pushStaffProfile,
+  pullStaffProfiles
 } from './supabase.js';
 
 import { setState, getState } from '../state.js';
@@ -56,7 +58,8 @@ const PUSH_FN_MAP = {
   waste: pushWaste,
   suppliers: pushSupplier,
   recipes: pushRecipe,
-  restaurants: pushRestaurantProfile
+  restaurants: pushRestaurantProfile,
+  staff_profiles: pushStaffProfile
 };
 
 // ─────────────────────────────────────────────
@@ -537,6 +540,21 @@ export async function pullAllFromCloud() {
       await upsertRestaurant(cloudRestaurant);
       setState('restaurant', cloudRestaurant);
       console.log(`[SyncEngine] Synced restaurant profile`);
+    }
+
+    // 10. Pull Staff Profiles
+    const cloudStaff = await pullStaffProfiles();
+    if (cloudStaff && cloudStaff.length > 0) {
+      const { upsertStaffProfile, getAllStaffProfiles } = await import('./indexedDB.js');
+      for (const profile of cloudStaff) {
+        await upsertStaffProfile(profile);
+      }
+      const allStaff = await getAllStaffProfiles();
+      setState('staffProfiles', allStaff);
+      console.log(`[SyncEngine] Synced ${cloudStaff.length} staff profiles`);
+      
+      // Emit custom event so UI can re-render if needed
+      setState('staffProfileSync', Date.now());
     }
 
     setState('syncStatus', 'synced');

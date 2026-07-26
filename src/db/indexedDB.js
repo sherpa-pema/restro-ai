@@ -507,3 +507,50 @@ export function getChannelFromTableName(name) {
   if (name.startsWith('BhojDeals-') || name.startsWith('Bhojdeals-')) return 'BhojDeals';
   return 'Regular';
 }
+
+// ─────────────────────────────────────────────
+// Auth / Staff Profiles CRUD
+// ─────────────────────────────────────────────
+
+/** Get all staff profiles. */
+export async function getAllStaffProfiles() {
+  return db.table('staffProfiles').toArray();
+}
+
+/** Get a single staff profile by ID. */
+export async function getStaffProfile(id) {
+  return db.table('staffProfiles').get(id);
+}
+
+/** Insert or update a staff profile. */
+export async function upsertStaffProfile(profile) {
+  const record = { ...profile, id: profile.id || uuidv4(), updated_at: profile.updated_at || new Date().toISOString() };
+  await db.table('staffProfiles').put(record);
+  return record.id;
+}
+
+/** Delete a staff profile by ID. */
+export async function deleteStaffProfile(id) {
+  await db.table('staffProfiles').delete(id);
+}
+
+// ─────────────────────────────────────────────
+// Current Session Cache
+// ─────────────────────────────────────────────
+
+/** Get the currently cached auth session. */
+export async function getCurrentSession() {
+  return db.table('currentSession').get('current');
+}
+
+/** Save the current auth session. */
+export async function saveCurrentSession(sessionData) {
+  const record = { id: 'current', ...sessionData };
+  await db.table('currentSession').put(record);
+}
+
+/** Clear the current auth session (logout). */
+export async function clearCurrentSession() {
+  await db.table('currentSession').delete('current');
+}
+

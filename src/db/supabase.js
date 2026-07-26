@@ -535,16 +535,56 @@ export async function pushRestaurantProfile(restaurant) {
 }
 
 // ─────────────────────────────────────────────
+// Auth / Staff Profiles
+// ─────────────────────────────────────────────
+
+/** Pull all staff profiles from Supabase. */
+export async function pullStaffProfiles() {
+  try {
+    const { data, error } = await supabase
+      .from('staff_profiles')
+      .select('*');
+    if (error) throw error;
+    return data || [];
+  } catch (err) {
+    console.error('[Supabase] pullStaffProfiles failed:', err);
+    return null;
+  }
+}
+
+/** Push a staff profile to Supabase. */
+export async function pushStaffProfile(profile) {
+  try {
+    const dbProfile = {
+      id: profile.id,
+      email: profile.email,
+      display_name: profile.display_name,
+      role: profile.role,
+      is_active: profile.is_active,
+      updated_at: new Date().toISOString()
+    };
+    const { error } = await supabase
+      .from('staff_profiles')
+      .upsert(dbProfile, { onConflict: 'id' });
+    if (error) throw error;
+    return true;
+  } catch (err) {
+    console.error('[Supabase] pushStaffProfile failed:', err);
+    return null;
+  }
+}
+
+// ─────────────────────────────────────────────
 // Realtime Subscriptions
 // ─────────────────────────────────────────────
 
 /**
  * Subscribe to realtime changes on all core tables.
- * @param {{ onTableChange: Function, onMenuChange: Function, onOrderChange: Function, onOrderItemChange: Function, onInventoryChange: Function, onWasteChange: Function, onSupplierChange: Function, onRecipeChange: Function, onRestaurantChange: Function }} callbacks
+ * @param {{ onTableChange: Function, onMenuChange: Function, onOrderChange: Function, onOrderItemChange: Function, onInventoryChange: Function, onWasteChange: Function, onSupplierChange: Function, onRecipeChange: Function, onRestaurantChange: Function, onStaffProfileChange: Function }} callbacks
  * @returns {import('@supabase/supabase-js').RealtimeChannel} The channel for cleanup
  */
 export function subscribeToChanges(callbacks) {
-  const { onTableChange, onMenuChange, onOrderChange, onOrderItemChange, onInventoryChange, onWasteChange, onSupplierChange, onRecipeChange, onRestaurantChange } = callbacks;
+  const { onTableChange, onMenuChange, onOrderChange, onOrderItemChange, onInventoryChange, onWasteChange, onSupplierChange, onRecipeChange, onRestaurantChange, onStaffProfileChange } = callbacks;
 
   const channel = supabase
     .channel('tablecraft-realtime')
@@ -618,6 +658,14 @@ export function subscribeToChanges(callbacks) {
       (payload) => {
         console.log('[Realtime] restaurants change:', payload.eventType);
         if (onRestaurantChange) onRestaurantChange(payload);
+      }
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'staff_profiles' },
+      (payload) => {
+        console.log('[Realtime] staff_profiles change:', payload.eventType);
+        if (onStaffProfileChange) onStaffProfileChange(payload);
       }
     )
     .subscribe((status) => {

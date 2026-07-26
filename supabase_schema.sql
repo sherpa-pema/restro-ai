@@ -232,6 +232,7 @@ CREATE TABLE IF NOT EXISTS restaurants (
   tax_percent NUMERIC(5, 2) DEFAULT 0,
   contact_person TEXT,
   contact_person_number TEXT,
+  admin_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -274,3 +275,50 @@ CREATE TRIGGER trg_set_transaction_bill_number
 BEFORE INSERT ON transactions
 FOR EACH ROW
 EXECUTE FUNCTION set_transaction_bill_number();
+
+-- 13. Staff Profiles
+CREATE TABLE IF NOT EXISTS staff_profiles (
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  email TEXT NOT NULL UNIQUE,
+  display_name TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('admin', 'waiter', 'kitchen')),
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE staff_profiles ENABLE ROW LEVEL SECURITY;
+
+-- Allow authenticated users to read all profiles (so Admin can list staff, Waiter can see others, etc.)
+CREATE POLICY "Allow authenticated to read staff_profiles" ON staff_profiles FOR SELECT TO authenticated USING (true);
+
+-- Allow users to update their own profile, or admins to update anyone
+CREATE POLICY "Allow admin and self to update staff_profiles" ON staff_profiles FOR UPDATE TO authenticated USING (
+  auth.uid() = id OR EXISTS (
+    SELECT 1 FROM staff_profiles sp WHERE sp.id = auth.uid() AND sp.role = 'admin'
+  )
+);
+
+-- Allow authenticated to insert (when first signing up, or admin creating a new user)
+CREATE POLICY "Allow authenticated to insert staff_profiles" ON staff_profiles FOR INSERT TO authenticated WITH CHECK (true);
+
+-- Allow admin to delete
+CREATE POLICY "Allow admin to delete staff_profiles" ON staff_profiles FOR DELETE TO authenticated USING (
+  EXISTS (
+    SELECT 1 FROM staff_profiles sp WHERE sp.id = auth.uid() AND sp.role = 'admin'
+  )
+);
+
+-- Enable Realtime
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_rel pr
+    JOIN pg_publication p ON p.oid = pr.prpubid
+    JOIN pg_class c ON c.oid = pr.prrelid
+    WHERE p.pubname = 'supabase_realtime' AND c.relname = 'staff_profiles'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE staff_profiles;
+  END IF;
+END $$;
+

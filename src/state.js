@@ -64,6 +64,15 @@ const state = {
 
   /** @type {object|null} Restaurant profile information */
   restaurant: null,
+
+  /** @type {'loading'|'unauthenticated'|'authenticated'} Auth state */
+  authState: 'loading',
+
+  /** @type {object|null} Currently logged in user session */
+  currentUser: null,
+
+  /** @type {'admin'|'waiter'|'kitchen'|null} Role of the logged in user */
+  userRole: null,
 };
 
 // ------------------------------------
