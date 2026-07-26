@@ -19,7 +19,7 @@
 ## Continuous Learning
 * **Document Mistakes:** Every time a mistake is made and the code is subsequently fixed, you MUST document the lesson learned into this `AGENTS.md` file as a new rule so that future agents do not repeat the same mistake.
 * **Reconciliation and Duplicate Handling:** When reconciling local offline database state with cloud database state, never use `Array.find()` (which only resolves/deletes the first match) if there can be multiple duplicates of records (e.g. due to seeding vs. sync queue differences). Always use `Array.filter()` to find and clean up all duplicates with mismatched IDs to prevent duplicate accumulation in IndexedDB.
-
+* **Event Emitter Infinite Loops:** When using the global Pub/Sub state event emitter (`on`, `setState`), never attach new listeners inside a listener callback (or inside initialization functions like `initUI()` called by the callback). JavaScript's `Set.prototype.forEach()` will visit newly added items during iteration, causing the browser main thread to hang in an infinite loop.
 ## Git Operations
 * **Pushing Commits:** When the user requests to "commit to git" or "push to git", this implicitly means to both commit the changes locally AND push them to the configured remote repository (`git push`). Always push after committing unless explicitly instructed otherwise.
 

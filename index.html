@@ -711,8 +711,13 @@
           <div id="suppliers-grid" class="grid grid-cols-1 md:grid-cols-3 gap-md">
             <!-- Dynamically populated supplier profile cards -->
           </div>
-        </div>
       </div>
+    </div>
+
+    <!-- PAGE: Staff Management -->
+    <div id="page-staff" class="page hidden flex flex-col gap-lg">
+      <!-- Populated by staffPanel.js -->
+    </div>
 
     </div>
   </main>
@@ -840,6 +845,46 @@
       </div>
     </div>
   </div>
+  <!-- Add Staff Modal -->
+  <div id="add-staff-modal" class="fixed inset-0 z-[100] hidden">
+    <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" id="add-staff-overlay"></div>
+    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[95%] max-w-[380px]">
+      <div class="bg-surface-container-lowest rounded-2xl border border-outline-variant shadow-2xl p-lg">
+        <h3 class="font-headline-lg text-headline-lg text-primary mb-4">Add New Staff</h3>
+        <form id="form-add-staff" class="flex flex-col gap-4">
+          <div>
+            <label class="block text-[11px] font-label-md text-on-surface-variant uppercase tracking-widest mb-1">Display Name</label>
+            <input type="text" id="staff-name" required class="w-full h-10 bg-surface-container border border-outline-variant rounded-lg px-3 text-body-md text-on-surface focus:outline-none focus:border-primary" placeholder="e.g. Sarah">
+          </div>
+          <div>
+            <label class="block text-[11px] font-label-md text-on-surface-variant uppercase tracking-widest mb-1">Email</label>
+            <input type="email" id="staff-email" required class="w-full h-10 bg-surface-container border border-outline-variant rounded-lg px-3 text-body-md text-on-surface focus:outline-none focus:border-primary" placeholder="sarah@restaurant.com">
+          </div>
+          <div>
+            <label class="block text-[11px] font-label-md text-on-surface-variant uppercase tracking-widest mb-1">Temporary Password</label>
+            <input type="text" id="staff-password" required minlength="6" class="w-full h-10 bg-surface-container border border-outline-variant rounded-lg px-3 text-body-md text-on-surface focus:outline-none focus:border-primary" placeholder="Minimum 6 chars">
+          </div>
+          <div>
+            <label class="block text-[11px] font-label-md text-on-surface-variant uppercase tracking-widest mb-1">Role</label>
+            <select id="staff-role" class="w-full h-10 bg-surface-container border border-outline-variant rounded-lg px-3 text-body-md text-on-surface focus:outline-none focus:border-primary">
+              <option value="waiter">Waiter</option>
+              <option value="kitchen">Kitchen</option>
+              <option value="admin">Admin</option>
+              <option value="manager">Manager</option>
+              <option value="cashier">Cashier</option>
+            </select>
+          </div>
+          <div class="flex gap-sm mt-sm">
+            <button type="submit" id="btn-submit-staff" class="flex-1 h-10 bg-primary text-on-primary rounded-lg font-label-md text-label-md hover:opacity-90 transition-all font-bold">
+              Create Account
+            </button>
+            <button type="button" id="btn-cancel-staff" class="h-10 px-4 bg-surface-container border border-outline-variant rounded-lg font-label-md text-label-md text-on-surface-variant hover:bg-surface-variant transition-all">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
   <!-- Log Waste Modal -->
   <div id="log-waste-modal" class="fixed inset-0 z-[100] hidden">
     <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" id="log-waste-overlay"></div>
@@ -1066,12 +1111,6 @@
   </div>
   </div>
 
-
-
-  <!-- PAGE: Staff Management -->
-  <div id="page-staff" class="page hidden">
-    <!-- Populated by staffPanel.js -->
-  </div>
 
   <!-- Hidden File Input for OCR -->
   <input id="ocr-file-input" type="file" accept="image/jpeg, image/png" class="hidden">

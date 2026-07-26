@@ -6,8 +6,10 @@ import { logoutUser } from '../db/auth.js';
 
 const ROLE_PAGES = {
   admin: ['overview', 'tables', 'kitchen', 'inventory', 'staff'],
+  manager: ['overview', 'tables', 'kitchen', 'inventory', 'staff'],
   waiter: ['tables', 'inventory'],
-  kitchen: ['kitchen']
+  kitchen: ['kitchen'],
+  cashier: ['tables', 'inventory']
 };
 
 let listenersAttached = false;
@@ -156,13 +158,11 @@ export function initSidebar() {
   // Listen to userRole changes to re-render nav and route
   on('userRole', (newRole) => {
     if (newRole) {
-      listenersAttached = false; // allow re-attaching listeners for navItems but we must be careful. Actually, innerHTML wipes old items, so their listeners are gone. Mobile tabs listeners we guarded. Wait, mobile tab click listener will attach again if listenersAttached becomes false! Let's just fix it by keeping listenersAttached true and doing it differently? Let's just re-render.
-      // Wait, let's keep it simple: we just reload the page on login/logout in real world, but here we can just update innerHTML and let initSidebar() run.
-      // We will just do initSidebar() again. It's safe for desktop nav because innerHTML replaces it.
-      // For mobile tabs, we guarded inside the loop.
+      // listenersAttached is intentionally not reset here to avoid an infinite loop
+      // where initSidebar() attaches duplicate listeners on state updates.
       initSidebar();
-      if (newRole === 'admin') navigateToPage('overview');
-      else if (newRole === 'waiter') navigateToPage('tables');
+      if (newRole === 'admin' || newRole === 'manager') navigateToPage('overview');
+      else if (newRole === 'waiter' || newRole === 'cashier') navigateToPage('tables');
       else if (newRole === 'kitchen') navigateToPage('kitchen');
     }
   });
@@ -195,7 +195,8 @@ function navigateToPage(pageId) {
     overview: document.getElementById('page-overview'),
     tables: document.getElementById('page-tables'),
     kitchen: document.getElementById('page-kitchen'),
-    inventory: document.getElementById('page-inventory')
+    inventory: document.getElementById('page-inventory'),
+    staff: document.getElementById('page-staff')
   };
 
   Object.keys(pages).forEach(key => {

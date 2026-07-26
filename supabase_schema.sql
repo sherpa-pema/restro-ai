@@ -281,7 +281,7 @@ CREATE TABLE IF NOT EXISTS staff_profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   email TEXT NOT NULL UNIQUE,
   display_name TEXT NOT NULL,
-  role TEXT NOT NULL CHECK (role IN ('admin', 'waiter', 'kitchen')),
+  role TEXT NOT NULL CHECK (role IN ('admin', 'manager', 'waiter', 'kitchen', 'cashier')),
   is_active BOOLEAN NOT NULL DEFAULT true,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()

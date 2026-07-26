@@ -71,7 +71,7 @@ const state = {
   /** @type {object|null} Currently logged in user session */
   currentUser: null,
 
-  /** @type {'admin'|'waiter'|'kitchen'|null} Role of the logged in user */
+  /** @type {'admin'|'manager'|'waiter'|'kitchen'|'cashier'|null} Role of the logged in user */
   userRole: null,
 };
 

@@ -13,10 +13,10 @@ export function initStaffPanel() {
   if (!staffPage) return;
 
   staffPage.innerHTML = `
-    <div class="mb-xl flex items-center justify-between">
+    <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-md border-b border-outline-variant pb-md mb-lg">
       <div>
-        <h2 class="font-headline-lg text-headline-lg font-bold text-primary">Staff Management</h2>
-        <p class="text-on-surface-variant text-body-md mt-1">Manage employee accounts and roles.</p>
+        <h2 class="font-headline-xl text-headline-xl text-primary tracking-tight">Staff Management</h2>
+        <p class="text-xs text-on-surface-variant mt-1">Manage employee accounts and system access roles.</p>
       </div>
       <button id="btn-show-add-staff" class="bg-primary hover:bg-primary/90 text-on-primary px-4 py-2 rounded-xl font-label-md text-label-md transition-colors flex items-center gap-2">
         <span class="material-symbols-outlined text-[18px]">person_add</span>
@@ -24,56 +24,31 @@ export function initStaffPanel() {
       </button>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-xl">
-      <!-- Left: Staff List -->
-      <div class="lg:col-span-2">
-        <div class="bg-surface-container-lowest rounded-2xl border border-outline-variant shadow-sm p-4">
-          <div id="staff-list" class="flex flex-col gap-2">
-            <!-- Populated via JS -->
-            <p class="text-on-surface-variant text-sm py-4 text-center">Loading staff...</p>
-          </div>
-        </div>
-      </div>
-
-      <!-- Right: Add Staff Form (Hidden by default on mobile) -->
-      <div id="add-staff-section" class="bg-surface-container-lowest rounded-2xl border border-outline-variant shadow-sm p-lg hidden lg:block h-fit">
-        <h3 class="font-headline-md text-headline-md font-bold text-primary mb-4">Add New Staff</h3>
-        <form id="form-add-staff" class="flex flex-col gap-4">
-          <div>
-            <label class="block text-[11px] font-label-md text-on-surface-variant uppercase tracking-widest mb-1">Display Name</label>
-            <input type="text" id="staff-name" required class="w-full bg-surface-container border border-outline-variant rounded-xl px-4 py-2 text-body-md text-on-surface focus:outline-none focus:border-primary" placeholder="e.g. Sarah">
-          </div>
-          <div>
-            <label class="block text-[11px] font-label-md text-on-surface-variant uppercase tracking-widest mb-1">Email</label>
-            <input type="email" id="staff-email" required class="w-full bg-surface-container border border-outline-variant rounded-xl px-4 py-2 text-body-md text-on-surface focus:outline-none focus:border-primary" placeholder="sarah@restaurant.com">
-          </div>
-          <div>
-            <label class="block text-[11px] font-label-md text-on-surface-variant uppercase tracking-widest mb-1">Temporary Password</label>
-            <input type="text" id="staff-password" required minlength="6" class="w-full bg-surface-container border border-outline-variant rounded-xl px-4 py-2 text-body-md text-on-surface focus:outline-none focus:border-primary" placeholder="Minimum 6 chars">
-          </div>
-          <div>
-            <label class="block text-[11px] font-label-md text-on-surface-variant uppercase tracking-widest mb-1">Role</label>
-            <select id="staff-role" class="w-full bg-surface-container border border-outline-variant rounded-xl px-4 py-2 text-body-md text-on-surface focus:outline-none focus:border-primary">
-              <option value="waiter">Waiter</option>
-              <option value="kitchen">Kitchen</option>
-              <option value="admin">Admin</option>
-            </select>
-          </div>
-          <button type="submit" id="btn-submit-staff" class="w-full bg-primary hover:bg-primary/90 text-on-primary py-3 rounded-xl font-label-md text-label-md transition-colors mt-2 font-bold">
-            Create Account
-          </button>
-        </form>
-      </div>
+    <!-- Staff List Grid -->
+    <div id="staff-list" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-md">
+      <!-- Populated via JS -->
+      <p class="text-on-surface-variant text-sm py-4 col-span-full text-center">Loading staff...</p>
     </div>
   `;
 
   // Listeners
-  document.getElementById('btn-show-add-staff').addEventListener('click', () => {
-    document.getElementById('add-staff-section').classList.toggle('hidden');
-  });
-
+  const modal = document.getElementById('add-staff-modal');
+  const overlay = document.getElementById('add-staff-overlay');
+  const btnCancel = document.getElementById('btn-cancel-staff');
   const formAddStaff = document.getElementById('form-add-staff');
   const btnSubmit = document.getElementById('btn-submit-staff');
+
+  const closeModal = () => {
+    if (modal) modal.classList.add('hidden');
+    if (formAddStaff) formAddStaff.reset();
+  };
+
+  document.getElementById('btn-show-add-staff').addEventListener('click', () => {
+    if (modal) modal.classList.remove('hidden');
+  });
+
+  if (overlay) overlay.addEventListener('click', closeModal);
+  if (btnCancel) btnCancel.addEventListener('click', closeModal);
 
   formAddStaff.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -91,7 +66,7 @@ export function initStaffPanel() {
 
     if (res.success) {
       showToast('Staff account created successfully!', 'success');
-      formAddStaff.reset();
+      closeModal();
       renderStaffList();
     } else {
       showToast(res.error || 'Failed to create account.', 'error');
@@ -138,27 +113,38 @@ export async function renderStaffList() {
       return a.display_name.localeCompare(b.display_name);
     });
 
+    const getRoleColor = (role) => {
+      switch (role) {
+        case 'admin': return 'bg-primary/10 text-primary';
+        case 'manager': return 'bg-purple-500/10 text-purple-600 dark:text-purple-400';
+        case 'kitchen': return 'bg-orange-500/10 text-orange-600 dark:text-orange-400';
+        case 'waiter': return 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400';
+        case 'cashier': return 'bg-secondary/15 text-secondary';
+        default: return 'bg-surface-variant text-on-surface-variant';
+      }
+    };
+
     container.innerHTML = profiles.map(p => `
-      <div class="flex items-center justify-between p-3 rounded-xl border border-outline-variant bg-surface ${!p.is_active ? 'opacity-60' : ''}">
-        <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-full bg-surface-container-highest flex items-center justify-center text-primary font-bold">
+      <div class="flex flex-col gap-4 p-lg rounded-2xl border border-outline-variant bg-surface-container-lowest shadow-sm ${!p.is_active ? 'opacity-60' : ''}">
+        <div class="flex items-center gap-4">
+          <div class="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-lg">
             ${p.display_name.charAt(0).toUpperCase()}
           </div>
-          <div>
-            <p class="font-bold text-on-surface flex items-center gap-2">
-              ${p.display_name} 
-              <span class="text-[10px] uppercase tracking-widest px-2 py-0.5 rounded bg-surface-variant text-on-surface-variant">${p.role}</span>
-              ${!p.is_active ? '<span class="text-[10px] uppercase tracking-widest px-2 py-0.5 rounded bg-error/10 text-error">Deactivated</span>' : ''}
-            </p>
-            <p class="text-xs text-on-surface-variant">${p.email}</p>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between w-full">
+              <p class="font-bold text-on-surface text-body-lg truncate">${p.display_name}</p>
+              ${!p.is_active ? '<span class="text-[10px] uppercase tracking-widest px-2 py-0.5 rounded bg-error/10 text-error shrink-0 ml-2">Deactivated</span>' : ''}
+            </div>
+            <p class="text-xs text-on-surface-variant truncate">${p.email}</p>
           </div>
         </div>
-        <div>
+        <div class="flex items-center justify-between border-t border-outline-variant pt-4">
+          <span class="text-[10px] uppercase tracking-widest px-2 py-0.5 rounded ${getRoleColor(p.role)}">${p.role}</span>
           ${p.role !== 'admin' ? `
-            <button class="btn-toggle-staff px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${p.is_active ? 'bg-error/10 text-error hover:bg-error/20' : 'bg-primary text-on-primary hover:bg-primary/90'}" data-id="${p.id}" data-active="${p.is_active}">
+            <button class="btn-toggle-staff px-4 py-1.5 rounded-lg text-[11px] font-bold transition-colors ${p.is_active ? 'bg-error/10 text-error hover:bg-error/20' : 'bg-primary text-on-primary hover:bg-primary/90'}" data-id="${p.id}" data-active="${p.is_active}">
               ${p.is_active ? 'Deactivate' : 'Reactivate'}
             </button>
-          ` : '<span class="text-xs text-on-surface-variant italic">Admin</span>'}
+          ` : '<span class="text-[11px] text-on-surface-variant italic font-bold">Admin Level</span>'}
         </div>
       </div>
     `).join('');
