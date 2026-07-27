@@ -781,6 +781,11 @@ async function addItemToTable(menuItem) {
         else if (channel === 'BhojDeals' || channel === 'Bhojdeals') orderChannel = 'BhojDeals';
       }
 
+      const state = getState();
+      const currentUser = state.currentUser;
+      const waiter_id = currentUser?.user?.id || null;
+      const waiter_name = currentUser?.display_name || null;
+
       order = { 
         id: orderId, 
         table_id: selectedId, 
@@ -791,6 +796,8 @@ async function addItemToTable(menuItem) {
         service_charge: 0, 
         discount: 0, 
         total: 0, 
+        waiter_id,
+        waiter_name,
         created_at: new Date().toISOString() 
       };
       await createOrder(order);

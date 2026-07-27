@@ -101,6 +101,11 @@ async function handleAddItem(intent) {
   // Get or create an open order for this table
   let order = await getOrderByTable(table.id);
   if (!order) {
+    const state = getState();
+    const currentUser = state.currentUser;
+    const waiter_id = currentUser?.user?.id || null;
+    const waiter_name = currentUser?.display_name || null;
+
     order = {
       id: uuidv4(),
       table_id: table.id,
@@ -111,6 +116,8 @@ async function handleAddItem(intent) {
       service_charge: 0,
       discount: 0,
       total: 0,
+      waiter_id,
+      waiter_name,
       created_at: new Date().toISOString(),
     };
     await createOrder(order);

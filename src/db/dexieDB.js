@@ -9,11 +9,11 @@ import Dexie from 'dexie';
 
 export const db = new Dexie('tablecraft-os');
 
-// Database Version 6: Added staffProfiles and currentSession for auth
-db.version(6).stores({
+// Database Version 7: Added waiter_id and waiter_name to orders, and waiter_name to transactions
+db.version(7).stores({
   tables: 'id',
   menuItems: 'id',
-  orders: 'id, table_id, status, bill_number',
+  orders: 'id, table_id, status, bill_number, waiter_id',
   orderItems: 'id, order_id',
   transactions: 'id, paid_at, bill_number',
   syncQueue: '++id, table, action',

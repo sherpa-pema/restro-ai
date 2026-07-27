@@ -65,7 +65,7 @@ export async function registerBusiness(email, password, businessName, adminName)
     };
     await saveCurrentSession(sessionData);
     
-    setState('currentUser', authData.session);
+    setState('currentUser', sessionData);
     setState('userRole', 'admin');
     setState('authState', 'authenticated');
 
@@ -182,7 +182,7 @@ export async function loginUser(email, password) {
       console.warn('[Auth] Session caching failed (non-fatal):', err)
     );
     
-    setState('currentUser', data.session);
+    setState('currentUser', sessionData);
     setState('userRole', profileData.role);
     setState('authState', 'authenticated');
 
@@ -244,11 +244,13 @@ export async function checkSession() {
             await logoutUser();
           } else if (profile) {
             // Update cached session
-            await saveCurrentSession({
+            const newSession = {
               ...data.session,
               role: profile.role,
               display_name: localSession.display_name
-            });
+            };
+            await saveCurrentSession(newSession);
+            setState('currentUser', newSession);
             setState('userRole', profile.role);
           }
         }

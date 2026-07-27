@@ -136,6 +136,8 @@ export async function pushOrder(order) {
       service_charge: order.service_charge,
       discount: order.discount,
       total: order.total,
+      waiter_id: order.waiter_id || null,
+      waiter_name: order.waiter_name || null,
       created_at: order.created_at,
       paid_at: order.paid_at
     };
@@ -200,6 +202,7 @@ export async function pushTransaction(tx) {
       payment_method: tx.payment_method,
       currency: tx.currency,
       category: tx.category || 'Dine-in',
+      waiter_name: tx.waiter_name || null,
       paid_at: tx.paid_at
     };
     const { error } = await supabase

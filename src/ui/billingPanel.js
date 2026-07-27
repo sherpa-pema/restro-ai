@@ -44,6 +44,7 @@ export function initBillingPanel() {
           payment_method: 'cash',
           currency: state.currency,
           category: txCategory,
+          waiter_name: order.waiter_name || null,
           paid_at: now
         };
         await addTransaction(transaction);
@@ -193,6 +194,7 @@ export function initBillingPanel() {
             quantity: i.quantity,
             price: i.price
           })),
+          waiter_name: order.waiter_name || null,
           timestamp: new Date().toISOString()
         };
 
@@ -368,6 +370,11 @@ export function renderBillingPanel() {
     let displayVal = order.channel || 'Dine-in';
     if (displayVal === 'PathaoFood') displayVal = 'Pathao';
     billingChannelDisplay.innerText = displayVal;
+  }
+
+  const serverSpan = document.getElementById('billing-server');
+  if (serverSpan) {
+    serverSpan.innerText = order.waiter_name || 'N/A';
   }
 
   const billNoSpan = document.getElementById('billing-bill-number');
