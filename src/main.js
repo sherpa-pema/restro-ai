@@ -137,6 +137,12 @@ async function seedDefaultData() {
  */
 async function bootstrap() {
   try {
+    // 0. Request persistent storage to prevent IndexedDB eviction
+    if (navigator.storage && navigator.storage.persist) {
+      const isPersisted = await navigator.storage.persist();
+      console.log(`[App] Persistent storage granted: ${isPersisted}`);
+    }
+
     // 1. Open/Create Local database
     await initDB();
     

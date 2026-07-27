@@ -206,24 +206,45 @@ async function processQueueEntry(entry) {
       return false;
     }
 
-    const result = await pushFn(data);
+    // ── PRE-PUSH REPAIR FOR ORDERS ──────────────────────────────────────────
+    if (table === 'orders' && action !== 'DELETE' && data.table_id) {
+      const { supabase } = await import('./supabase.js');
+      const { data: remoteTable, error: tableErr } = await supabase
+        .from('tables')
+        .select('id, name')
+        .eq('id', data.table_id)
+        .maybeSingle();
 
-    // null means the push function caught an error internally
-    if (result === null) {
-      // We cannot inspect the error here because pushFn swallows it.
-      // As a safety net, check if this is a transaction/order_item whose parent
-      // order no longer exists locally (meaning it was cleaned up by reconcile).
-      if ((table === 'transactions' || table === 'order_items') && data.order_id) {
-        const { getOrder } = await import('./indexedDB.js');
-        const parentOrder = await getOrder(data.order_id);
-        if (!parentOrder) {
-          // Parent order was deleted locally too — permanently unresolvable.
-          return 'DISCARD';
+      if (tableErr || !remoteTable) {
+        console.warn(`[SyncEngine] Order ${data.id} references missing table_id ${data.table_id}. Attempting repair...`);
+        const { getTable, createOrder } = await import('./indexedDB.js');
+        const localTable = await getTable(data.table_id);
+        let remapped = false;
+
+        if (localTable && localTable.name) {
+          const { data: matchingTable } = await supabase
+            .from('tables')
+            .select('id, name')
+            .eq('name', localTable.name)
+            .maybeSingle();
+          
+          if (matchingTable) {
+            console.log(`[SyncEngine] Remapping order ${data.id} to new table ID for ${localTable.name}`);
+            data.table_id = matchingTable.id;
+            remapped = true;
+            await createOrder(data); // update locally
+          }
+        }
+
+        if (!remapped) {
+           console.warn(`[SyncEngine] Discarding unresolvable queue entry ${entry.id} (orders/${action}) — table_id no longer exists in Supabase and could not be remapped.`);
+           return 'DISCARD';
         }
       }
-      return false;
     }
 
+    // Execute the push operation; errors will be thrown and caught below
+    await pushFn(data);
     return true;
   } catch (err) {
     // Detect permanent FK violation (parent deleted upstream)
@@ -236,6 +257,27 @@ async function processQueueEntry(entry) {
       console.warn(`[SyncEngine] Conflict/duplicate for ${table}/${action} — discarding entry.`);
       return 'DISCARD';
     }
+
+    // ── FALLBACK LOCAL EXISTENCE CHECKS ─────────────────────────────────────
+    // If network fails (not FK), we still discard if the parent was deleted locally
+    if ((table === 'transactions' || table === 'order_items') && data.order_id) {
+      const { getOrder } = await import('./indexedDB.js');
+      const parentOrder = await getOrder(data.order_id);
+      if (!parentOrder) {
+        console.warn(`[SyncEngine] Parent order missing locally for ${table}/${action} — discarding entry.`);
+        return 'DISCARD';
+      }
+    }
+    
+    if (table === 'orders' && data.table_id) {
+      const { getTable } = await import('./indexedDB.js');
+      const parentTable = await getTable(data.table_id);
+      if (!parentTable) {
+        console.warn(`[SyncEngine] Parent table missing locally for ${table}/${action} — discarding entry.`);
+        return 'DISCARD';
+      }
+    }
+
     console.error(`[SyncEngine] processQueueEntry failed for ${table}/${action}:`, err);
     return false;
   }

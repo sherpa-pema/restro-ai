@@ -14,7 +14,13 @@ import { createClient } from '@supabase/supabase-js';
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://ahfuhaujycwnztryzpab.supabase.co';
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: false
+  }
+});
 
 /**
  * Test the Supabase connection and perform initial setup.
@@ -65,7 +71,7 @@ export async function pushTable(table) {
     return true;
   } catch (err) {
     console.error('[Supabase] pushTable failed for table:', table, 'Error:', err);
-    return null;
+    throw err;
   }
 }
 
@@ -90,7 +96,7 @@ export async function pushMenuItem(item) {
     return true;
   } catch (err) {
     console.error('[Supabase] pushMenuItem failed:', err);
-    return null;
+    throw err;
   }
 }
 
@@ -150,7 +156,7 @@ export async function pushOrder(order) {
     return true;
   } catch (err) {
     console.error('[Supabase] pushOrder failed:', err);
-    return null;
+    throw err;
   }
 }
 
@@ -189,7 +195,7 @@ export async function pushOrderItem(item) {
     return true;
   } catch (err) {
     console.error('[Supabase] pushOrderItem failed:', err);
-    return null;
+    throw err;
   }
 }
 
@@ -232,7 +238,7 @@ export async function pushTransaction(tx) {
     return true;
   } catch (err) {
     console.error('[Supabase] pushTransaction failed:', err);
-    return null;
+    throw err;
   }
 }
 
@@ -367,7 +373,7 @@ export async function pushInventory(item) {
     return true;
   } catch (err) {
     console.error('[Supabase] pushInventory failed:', err);
-    return null;
+    throw err;
   }
 }
 
@@ -404,7 +410,7 @@ export async function pushWaste(log) {
     return true;
   } catch (err) {
     console.error('[Supabase] pushWaste failed:', err);
-    return null;
+    throw err;
   }
 }
 
@@ -442,7 +448,7 @@ export async function pushSupplier(supplier) {
     return true;
   } catch (err) {
     console.error('[Supabase] pushSupplier failed:', err);
-    return null;
+    throw err;
   }
 }
 
@@ -477,7 +483,7 @@ export async function pushRecipe(recipe) {
     return true;
   } catch (err) {
     console.error('[Supabase] pushRecipe failed:', err);
-    return null;
+    throw err;
   }
 }
 
@@ -535,7 +541,7 @@ export async function pushRestaurantProfile(restaurant) {
     return true;
   } catch (err) {
     console.error('[Supabase] pushRestaurantProfile failed:', err);
-    return null;
+    throw err;
   }
 }
 
@@ -575,7 +581,7 @@ export async function pushStaffProfile(profile) {
     return true;
   } catch (err) {
     console.error('[Supabase] pushStaffProfile failed:', err);
-    return null;
+    throw err;
   }
 }
 
