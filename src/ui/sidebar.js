@@ -2,7 +2,7 @@
 
 import { getState, setState, on } from '../state.js';
 import { showToast } from './toasts.js';
-import { logoutUser } from '../db/auth.js';
+import { logoutUser, updateDisplayName, changePassword } from '../db/auth.js';
 
 const ROLE_PAGES = {
   admin: ['overview', 'tables', 'kitchen', 'inventory', 'staff'],
@@ -22,6 +22,23 @@ export function initSidebar() {
   const mobileTabs = document.getElementById('mobile-tabs');
   const currencySelector = document.getElementById('currency-selector');
   const mobileCurrencySelector = document.getElementById('mobile-currency-selector');
+
+  function updateProfileUI() {
+    const user = getState().currentUser;
+    if (user && user.display_name) {
+      const initial = user.display_name.charAt(0).toUpperCase();
+      
+      const desktopUserName = document.getElementById('desktop-user-name');
+      if (desktopUserName) desktopUserName.textContent = user.display_name;
+      
+      const desktopUserAvatar = document.getElementById('desktop-user-avatar');
+      if (desktopUserAvatar) desktopUserAvatar.textContent = initial;
+      
+      const mobileProfileBtn = document.getElementById('btn-profile-settings-mobile');
+      if (mobileProfileBtn) mobileProfileBtn.textContent = initial;
+    }
+  }
+  updateProfileUI();
 
   const role = getState().userRole;
   const allowedPages = role ? ROLE_PAGES[role] : [];
@@ -115,6 +132,97 @@ export function initSidebar() {
 
   if (listenersAttached) return; // Prevent duplicate listeners below
   listenersAttached = true;
+
+  // Profile Settings Modal Logic
+  const modalProfile = document.getElementById('modal-profile-settings');
+  const btnCloseProfile = document.getElementById('btn-close-profile');
+  const backdropProfile = document.getElementById('profile-modal-backdrop');
+  
+  const btnProfileDesktop = document.getElementById('btn-profile-settings-desktop');
+  const btnProfileMobile = document.getElementById('btn-profile-settings-mobile');
+
+  function openProfileModal() {
+    if (!modalProfile) return;
+    const user = getState().currentUser;
+    if (user) {
+      document.getElementById('profile-role-badge').textContent = user.role || 'Unknown';
+      document.getElementById('profile-email-text').textContent = user.email || (user.user && user.user.email) || '';
+      document.getElementById('profile-name-input').value = user.display_name || '';
+      document.getElementById('profile-new-password').value = '';
+      document.getElementById('profile-confirm-password').value = '';
+    }
+    modalProfile.classList.remove('hidden');
+  }
+
+  function closeProfileModal() {
+    if (modalProfile) modalProfile.classList.add('hidden');
+  }
+
+  if (btnProfileDesktop) btnProfileDesktop.addEventListener('click', openProfileModal);
+  if (btnProfileMobile) btnProfileMobile.addEventListener('click', openProfileModal);
+  if (btnCloseProfile) btnCloseProfile.addEventListener('click', closeProfileModal);
+  if (backdropProfile) backdropProfile.addEventListener('click', closeProfileModal);
+
+  // Profile Edit Name Form
+  const formEditProfile = document.getElementById('form-edit-profile');
+  if (formEditProfile) {
+    formEditProfile.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const newName = document.getElementById('profile-name-input').value.trim();
+      if (!newName) return;
+      
+      const btn = document.getElementById('btn-save-profile-name');
+      const originalText = btn.textContent;
+      btn.textContent = 'Saving...';
+      btn.disabled = true;
+
+      const res = await updateDisplayName(newName);
+      if (res.success) {
+        showToast('Profile name updated successfully', 'success');
+        updateProfileUI();
+      } else {
+        showToast('Failed to update profile: ' + res.error, 'error');
+      }
+
+      btn.textContent = originalText;
+      btn.disabled = false;
+    });
+  }
+
+  // Change Password Form
+  const formChangePassword = document.getElementById('form-change-password');
+  if (formChangePassword) {
+    formChangePassword.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const p1 = document.getElementById('profile-new-password').value;
+      const p2 = document.getElementById('profile-confirm-password').value;
+
+      if (p1 !== p2) {
+        showToast('Passwords do not match', 'error');
+        return;
+      }
+      if (p1.length < 6) {
+        showToast('Password must be at least 6 characters', 'error');
+        return;
+      }
+
+      const btn = document.getElementById('btn-update-password');
+      const originalText = btn.innerHTML;
+      btn.innerHTML = 'Updating...';
+      btn.disabled = true;
+
+      const res = await changePassword(p1);
+      if (res.success) {
+        showToast('Password updated successfully', 'success');
+        closeProfileModal();
+      } else {
+        showToast('Failed to update password: ' + res.error, 'error');
+      }
+
+      btn.innerHTML = originalText;
+      btn.disabled = false;
+    });
+  }
 
   // Setup logout buttons
   const btnLogoutDesktop = document.getElementById('btn-logout-desktop');

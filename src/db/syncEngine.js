@@ -454,16 +454,31 @@ export async function pullAllFromCloud() {
     // cloud response correctly sweeps stale local orders after a Supabase reset.
     const cloudOrders = await pullOrders();
     if (cloudOrders != null) {
-      const { getOrder } = await import('./indexedDB.js');
+      const { getOrder, getTable, isTakeawayTable, getChannelFromTableName } = await import('./indexedDB.js');
       const cloudOrderIdSet = new Set(cloudOrders.map(o => o.id));
 
       // Upsert all cloud orders locally
       for (const order of cloudOrders) {
         const local = await getOrder(order.id);
+        
+        let channel = local ? local.channel : undefined;
+        if (!channel) {
+          const table = await getTable(order.table_id);
+          if (table && isTakeawayTable(table)) {
+            const rawChannel = table.channel || getChannelFromTableName(table.name);
+            if (rawChannel === 'Regular') channel = 'Takeout';
+            else if (rawChannel === 'Foodmandu') channel = 'Foodmandu';
+            else if (rawChannel === 'Pathao') channel = 'Pathao';
+            else if (rawChannel === 'BhojDeals' || rawChannel === 'Bhojdeals') channel = 'BhojDeals';
+          }
+        }
+
         const merged = {
           ...order,
           kitchen_status: local ? (local.kitchen_status || 'cooking') : 'cooking'
         };
+        if (channel) merged.channel = channel;
+        
         await createOrder(merged);
       }
 

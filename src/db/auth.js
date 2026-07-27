@@ -1,6 +1,6 @@
 import { supabase } from './supabase.js';
 import { saveCurrentSession, getCurrentSession as getSessionFromDB, clearCurrentSession, upsertStaffProfile, getStaffProfile } from './indexedDB.js';
-import { setState } from '../state.js';
+import { setState, getState } from '../state.js';
 
 /**
  * Register a new business (Admin account + Restaurant profile).
@@ -265,5 +265,61 @@ export async function checkSession() {
     console.error("[Auth] Session check failed:", error);
     setState('authState', 'unauthenticated');
     return false;
+  }
+}
+
+/**
+ * Update user display name
+ */
+export async function updateDisplayName(newName) {
+  try {
+    const session = getState().currentUser;
+    if (!session || !session.user) throw new Error("No active session.");
+
+    const userId = session.user.id;
+
+    // Update Supabase staff_profiles
+    const { error } = await supabase
+      .from('staff_profiles')
+      .update({ display_name: newName, updated_at: new Date().toISOString() })
+      .eq('id', userId);
+
+    if (error) throw error;
+
+    // Update Local IndexedDB
+    const profile = await getStaffProfile(userId);
+    if (profile) {
+      profile.display_name = newName;
+      profile.updated_at = new Date().toISOString();
+      await upsertStaffProfile(profile);
+    }
+
+    // Update State
+    const updatedSession = { ...session, display_name: newName };
+    await saveCurrentSession(updatedSession);
+    setState('currentUser', updatedSession);
+
+    return { success: true };
+  } catch (error) {
+    console.error("[Auth] Update display name failed:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Change user password
+ */
+export async function changePassword(newPassword) {
+  try {
+    const { data, error } = await supabase.auth.updateUser({
+      password: newPassword
+    });
+
+    if (error) throw error;
+
+    return { success: true };
+  } catch (error) {
+    console.error("[Auth] Change password failed:", error);
+    return { success: false, error: error.message };
   }
 }

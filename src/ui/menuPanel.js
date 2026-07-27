@@ -777,7 +777,7 @@ async function addItemToTable(menuItem) {
         const channel = table.channel || getChannelFromTableName(table.name);
         if (channel === 'Regular') orderChannel = 'Takeout';
         else if (channel === 'Foodmandu') orderChannel = 'Foodmandu';
-        else if (channel === 'Pathao') orderChannel = 'PathaoFood';
+        else if (channel === 'Pathao') orderChannel = 'Pathao';
         else if (channel === 'BhojDeals' || channel === 'Bhojdeals') orderChannel = 'BhojDeals';
       }
 

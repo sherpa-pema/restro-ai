@@ -8,6 +8,8 @@ CREATE TABLE IF NOT EXISTS tables (
   seats INTEGER NOT NULL DEFAULT 4,
   status TEXT NOT NULL DEFAULT 'available' CHECK (status IN ('available', 'occupied')),
   category TEXT NOT NULL DEFAULT 'Indoor',
+  type TEXT,
+  channel TEXT,
   current_order_id UUID,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -38,7 +40,10 @@ CREATE TABLE IF NOT EXISTS orders (
   discount NUMERIC(10, 2) NOT NULL DEFAULT 0,
   total NUMERIC(10, 2) NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  paid_at TIMESTAMPTZ
+  paid_at TIMESTAMPTZ,
+  waiter_id UUID,
+  waiter_name TEXT,
+  channel TEXT
 );
 
 -- 4. Order Items

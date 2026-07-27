@@ -4,6 +4,7 @@ import './styles/index.css';
 import { 
   initDB, 
   getAllTables, 
+  getTable,
   upsertTable, 
   deleteTable,
   getAllMenuItems, 
@@ -33,13 +34,14 @@ import {
   updateOrder,
   getDB,
   isTakeawayTable,
+  getChannelFromTableName,
   getRestaurantProfile,
   upsertRestaurant
 } from './db/indexedDB.js';
 import { initSupabase, subscribeToChanges } from './db/supabase.js';
 import { initSyncEngine, pullAllFromCloud, queueSync } from './db/syncEngine.js';
 import { checkSession } from './db/auth.js';
-import { setState, getState } from './state.js';
+import { setState, getState, on } from './state.js';
 import { initAuthScreen } from './ui/authScreen.js';
 import { initSidebar } from './ui/sidebar.js';
 import { initStaffPanel } from './ui/staffPanel.js';
@@ -144,6 +146,15 @@ async function bootstrap() {
     // 1.5 Check Auth Session (will set authState in state.js)
     await checkSession();
     
+    // Listen for authentication to initialize cloud sync
+    let cloudSyncInitialized = false;
+    on('authState', async (status) => {
+      if (status === 'authenticated' && !cloudSyncInitialized) {
+        cloudSyncInitialized = true;
+        await initCloudSync();
+      }
+    });
+    
     // 2. Hydrate defaults if required
     await seedDefaultData();
     
@@ -190,175 +201,205 @@ async function bootstrap() {
     renderMenuPanel();
     try { renderRevenueDashboard(); } catch (e) { console.warn('[App] Overview dashboard render failed:', e); }
     
-    // 6. Connect to Supabase Cloud & trigger pull (non-blocking, async background)
-    initSupabase().then(async (success) => {
-      if (success) {
-        console.log('[App] Connected to Supabase Cloud — syncing latest state...');
-        await pullAllFromCloud();
-        
-        // Refresh local cache representation in memory and re-render
-        const syncedTables = await getAllTables();
-        const syncedMenu = await getAllMenuItems();
-        const syncedTx = await getTodayTransactions();
-        const syncedOrders = await getAllOrders();
-        const syncedInventory = await getAllInventory();
-        const syncedWaste = await getTodayWaste();
-        const syncedSuppliers = await getAllSuppliers();
-        const syncedRecipes = await getAllRecipes();
-
-        setState('tables', syncedTables);
-        setState('menuItems', syncedMenu);
-        setState('transactions', syncedTx);
-        setState('orders', syncedOrders);
-        setState('inventory', syncedInventory);
-        setState('waste', syncedWaste);
-        setState('suppliers', syncedSuppliers);
-        setState('recipes', syncedRecipes);
-        
-        // pullAllFromCloud handles pulling and saving the restaurant profile to IndexedDB
-        // We ensure the state is up-to-date with whatever was saved
-        const localRestaurant = await getRestaurantProfile();
-        setState('restaurant', localRestaurant);
-        
-        await renderFloorMap();
-        renderMenuPanel();
-        renderRevenueDashboard();
-
-        // 7. Cleanup any orphaned/stuck takeaway tables (soft cleanup of database state)
-        try {
-          // Ensure Takeaway-Archive table exists locally and in the cloud
-          const { table: archiveTable } = await getOrCreateTakeawayArchiveTable();
-          // Always queue an update/sync for the archive table on startup to guarantee it exists in Supabase
-          await queueSync('tables', 'UPDATE', archiveTable);
-
-          await cleanupOrphanedTakeaways();
-        } catch (cleanupErr) {
-          console.error('[App] Orphaned takeaway cleanup failed:', cleanupErr);
-        }
-
-        // 8. Subscribe to realtime cloud changes
-        subscribeToChanges({
-          onTableChange: async (payload) => {
-            if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-              await upsertTable(payload.new);
-            } else if (payload.eventType === 'DELETE') {
-              await deleteTable(payload.old.id);
-            }
-            const current = await getAllTables();
-            setState('tables', current);
-            await renderFloorMap();
-          },
-          onMenuChange: async (payload) => {
-            if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-              await addMenuItem(payload.new);
-            } else if (payload.eventType === 'DELETE') {
-              await deleteMenuItem(payload.old.id);
-            }
-            const current = await getAllMenuItems();
-            setState('menuItems', current);
-            renderMenuPanel();
-          },
-          onOrderChange: async (payload) => {
-            if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-              const local = await getOrder(payload.new.id);
-              const merged = {
-                ...payload.new,
-                kitchen_status: local ? (local.kitchen_status || 'cooking') : 'cooking'
-              };
-              await createOrder(merged);
-            } else if (payload.eventType === 'DELETE') {
-              await deleteOrder(payload.old.id);
-            }
-            const current = await getAllOrders();
-            setState('orders', current);
-            // Refresh billing active order if loaded
-            const activeTableId = getState().selectedTableId;
-            if (activeTableId) {
-              const order = await getOrderByTable(activeTableId);
-              setState('currentOrder', order || null);
-              if (order) {
-                const items = await getOrderItems(order.id);
-                setState('currentOrderItems', items);
-              } else {
-                setState('currentOrderItems', []);
-              }
-            }
-            renderRevenueDashboard();
-          },
-          onOrderItemChange: async (payload) => {
-            if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-              await addOrderItem(payload.new);
-            } else if (payload.eventType === 'DELETE') {
-              await removeOrderItem(payload.old.id);
-            }
-            // Trigger orders state update so kitchen and dashboards re-render
-            const currentOrders = await getAllOrders();
-            setState('orders', currentOrders);
-
-            const activeTableId = getState().selectedTableId;
-            if (activeTableId) {
-              const order = await getOrderByTable(activeTableId);
-              setState('currentOrder', order || null);
-              if (order) {
-                const items = await getOrderItems(order.id);
-                setState('currentOrderItems', items);
-              } else {
-                setState('currentOrderItems', []);
-              }
-            }
-            renderRevenueDashboard();
-          },
-          onInventoryChange: async (payload) => {
-            if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-              await upsertInventory(payload.new);
-            }
-            const current = await getAllInventory();
-            setState('inventory', current);
-            renderRevenueDashboard();
-          },
-          onWasteChange: async (payload) => {
-            if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-              await addWasteLog(payload.new);
-            }
-            const current = await getTodayWaste();
-            setState('waste', current);
-            renderRevenueDashboard();
-          },
-          onSupplierChange: async (payload) => {
-            if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-              await upsertSupplier(payload.new);
-            } else if (payload.eventType === 'DELETE') {
-              await deleteSupplier(payload.old.id);
-            }
-            const current = await getAllSuppliers();
-            setState('suppliers', current);
-          },
-          onRecipeChange: async (payload) => {
-            if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-              await upsertRecipe(payload.new);
-            } else if (payload.eventType === 'DELETE') {
-              await deleteRecipe(payload.old.id);
-            }
-            const current = await getAllRecipes();
-            setState('recipes', current);
-          },
-          onRestaurantChange: async (payload) => {
-            if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-              await upsertRestaurant(payload.new);
-            }
-            const current = await getRestaurantProfile();
-            setState('restaurant', current);
-          }
-        });
-      }
-    });
-
-    // 7. Start the FIFO Sync Engine queue processing
-    initSyncEngine();
-
     console.log('[App] TableCraft OS bootstrapped successfully!');
   } catch (err) {
     console.error('[App] Failed to initialize application:', err);
+  }
+}
+
+/**
+ * Initializes Supabase connection, pulls all cloud data, sets up realtime subscriptions,
+ * and starts the background sync engine queue.
+ */
+async function initCloudSync() {
+  try {
+    const success = await initSupabase();
+    if (!success) return;
+
+    console.log('[App] Connected to Supabase Cloud — syncing latest state...');
+    await pullAllFromCloud();
+    
+    // Refresh local cache representation in memory and re-render
+    const syncedTables = await getAllTables();
+    const syncedMenu = await getAllMenuItems();
+    const syncedTx = await getTodayTransactions();
+    const syncedOrders = await getAllOrders();
+    const syncedInventory = await getAllInventory();
+    const syncedWaste = await getTodayWaste();
+    const syncedSuppliers = await getAllSuppliers();
+    const syncedRecipes = await getAllRecipes();
+
+    setState('tables', syncedTables);
+    setState('menuItems', syncedMenu);
+    setState('transactions', syncedTx);
+    setState('orders', syncedOrders);
+    setState('inventory', syncedInventory);
+    setState('waste', syncedWaste);
+    setState('suppliers', syncedSuppliers);
+    setState('recipes', syncedRecipes);
+    
+    // pullAllFromCloud handles pulling and saving the restaurant profile to IndexedDB
+    // We ensure the state is up-to-date with whatever was saved
+    const localRestaurant = await getRestaurantProfile();
+    setState('restaurant', localRestaurant);
+    
+    await renderFloorMap();
+    renderMenuPanel();
+    renderRevenueDashboard();
+
+    // Cleanup any orphaned/stuck takeaway tables (soft cleanup of database state)
+    try {
+      // Ensure Takeaway-Archive table exists locally and in the cloud
+      const { table: archiveTable } = await getOrCreateTakeawayArchiveTable();
+      // Always queue an update/sync for the archive table on startup to guarantee it exists in Supabase
+      await queueSync('tables', 'UPDATE', archiveTable);
+
+      await cleanupOrphanedTakeaways();
+    } catch (cleanupErr) {
+      console.error('[App] Orphaned takeaway cleanup failed:', cleanupErr);
+    }
+
+    // Subscribe to realtime cloud changes
+    subscribeToChanges({
+      onTableChange: async (payload) => {
+        if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+          const local = await getTable(payload.new.id);
+          const merged = {
+            ...(local || {}),
+            ...payload.new
+          };
+          await upsertTable(merged);
+        } else if (payload.eventType === 'DELETE') {
+          await deleteTable(payload.old.id);
+        }
+        const current = await getAllTables();
+        setState('tables', current);
+        await renderFloorMap();
+      },
+      onMenuChange: async (payload) => {
+        if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+          await addMenuItem(payload.new);
+        } else if (payload.eventType === 'DELETE') {
+          await deleteMenuItem(payload.old.id);
+        }
+        const current = await getAllMenuItems();
+        setState('menuItems', current);
+        renderMenuPanel();
+      },
+      onOrderChange: async (payload) => {
+        if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+          const local = await getOrder(payload.new.id);
+          const merged = {
+            ...(local || {}),
+            ...payload.new,
+            kitchen_status: local ? (local.kitchen_status || 'cooking') : 'cooking'
+          };
+
+          // Derive channel from the table if it's missing after merge
+          if (!merged.channel) {
+            try {
+              const table = await getTable(merged.table_id);
+              if (table && isTakeawayTable(table)) {
+                const rawCh = table.channel || getChannelFromTableName(table.name);
+                if (rawCh === 'Regular') merged.channel = 'Takeout';
+                else if (rawCh) merged.channel = rawCh;
+              } else {
+                merged.channel = 'Dine-in';
+              }
+            } catch (e) { /* table lookup failed, leave channel as-is */ }
+          }
+
+          await createOrder(merged);
+        } else if (payload.eventType === 'DELETE') {
+          await deleteOrder(payload.old.id);
+        }
+        const current = await getAllOrders();
+        setState('orders', current);
+        // Refresh billing active order if loaded
+        const activeTableId = getState().selectedTableId;
+        if (activeTableId) {
+          const order = await getOrderByTable(activeTableId);
+          setState('currentOrder', order || null);
+          if (order) {
+            const items = await getOrderItems(order.id);
+            setState('currentOrderItems', items);
+          } else {
+            setState('currentOrderItems', []);
+          }
+        }
+        renderRevenueDashboard();
+      },
+      onOrderItemChange: async (payload) => {
+        if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+          await addOrderItem(payload.new);
+        } else if (payload.eventType === 'DELETE') {
+          await removeOrderItem(payload.old.id);
+        }
+        // Trigger orders state update so kitchen and dashboards re-render
+        const currentOrders = await getAllOrders();
+        setState('orders', currentOrders);
+
+        const activeTableId = getState().selectedTableId;
+        if (activeTableId) {
+          const order = await getOrderByTable(activeTableId);
+          setState('currentOrder', order || null);
+          if (order) {
+            const items = await getOrderItems(order.id);
+            setState('currentOrderItems', items);
+          } else {
+            setState('currentOrderItems', []);
+          }
+        }
+        renderRevenueDashboard();
+      },
+      onInventoryChange: async (payload) => {
+        if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+          await upsertInventory(payload.new);
+        }
+        const current = await getAllInventory();
+        setState('inventory', current);
+        renderRevenueDashboard();
+      },
+      onWasteChange: async (payload) => {
+        if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+          await addWasteLog(payload.new);
+        }
+        const current = await getTodayWaste();
+        setState('waste', current);
+        renderRevenueDashboard();
+      },
+      onSupplierChange: async (payload) => {
+        if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+          await upsertSupplier(payload.new);
+        } else if (payload.eventType === 'DELETE') {
+          await deleteSupplier(payload.old.id);
+        }
+        const current = await getAllSuppliers();
+        setState('suppliers', current);
+      },
+      onRecipeChange: async (payload) => {
+        if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+          await upsertRecipe(payload.new);
+        } else if (payload.eventType === 'DELETE') {
+          await deleteRecipe(payload.old.id);
+        }
+        const current = await getAllRecipes();
+        setState('recipes', current);
+      },
+      onRestaurantChange: async (payload) => {
+        if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+          await upsertRestaurant(payload.new);
+        }
+        const current = await getRestaurantProfile();
+        setState('restaurant', current);
+      }
+    });
+
+    // Start the FIFO Sync Engine queue processing
+    initSyncEngine();
+
+  } catch (err) {
+    console.error('[CloudSync] Failed to initialize cloud sync:', err);
   }
 }
 

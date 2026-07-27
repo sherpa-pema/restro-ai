@@ -267,7 +267,6 @@ export async function renderFloorMap() {
           if (!channel) {
             channel = order.channel;
             if (channel === 'Takeout') channel = 'Regular';
-            else if (channel === 'PathaoFood') channel = 'Pathao';
           }
         }
       }

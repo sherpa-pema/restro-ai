@@ -349,7 +349,7 @@ function drawChannelsSplitChart(completedOrders) {
     'Dine-in': 0,
     'Takeout': 0,
     'Foodmandu': 0,
-    'PathaoFood': 0,
+    'Pathao': 0,
     'BhojDeals': 0
   };
 
@@ -367,7 +367,7 @@ function drawChannelsSplitChart(completedOrders) {
     'Dine-in': '#0072b2',
     'Takeout': '#e69f00',
     'Foodmandu': '#009e73',
-    'PathaoFood': '#cc79a7',
+    'Pathao': '#cc79a7',
     'BhojDeals': '#cc5500'
   };
 

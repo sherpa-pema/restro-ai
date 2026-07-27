@@ -50,6 +50,8 @@ export async function pushTable(table) {
       seats: table.seats,
       status: table.status,
       category: table.category || 'Indoor',
+      type: table.type || null,
+      channel: table.channel || null,
       current_order_id: table.current_order_id,
       updated_at: table.updated_at
     };
@@ -124,8 +126,7 @@ export async function uploadMenuImage(file, category, itemName) {
 /** Upsert an order to Supabase. */
 export async function pushOrder(order) {
   try {
-    // channel is omitted intentionally — Supabase uses its DB default.
-    // The local channel field is used only for UI grouping and revenue charts.
+    // Include channel so it persists in Supabase
     const dbOrder = {
       id: order.id,
       table_id: order.table_id,
@@ -138,6 +139,7 @@ export async function pushOrder(order) {
       total: order.total,
       waiter_id: order.waiter_id || null,
       waiter_name: order.waiter_name || null,
+      channel: order.channel || null,
       created_at: order.created_at,
       paid_at: order.paid_at
     };
