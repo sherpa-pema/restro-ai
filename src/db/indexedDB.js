@@ -487,12 +487,12 @@ export async function getOrCreateTakeawayArchiveTable() {
 export function isTakeawayTable(table) {
   if (!table) return false;
   return (
-    table.type === 'takeaway' || 
-    table.category === 'Takeaway' || 
+    table.type === 'takeaway' ||
+    table.category === 'Takeaway' ||
     (table.name && (
-      table.name.startsWith('TA-') || 
-      table.name.startsWith('Foodmandu-') || 
-      table.name.startsWith('Pathao-') || 
+      table.name.startsWith('TA-') ||
+      table.name.startsWith('Foodmandu-') ||
+      table.name.startsWith('Pathao-') ||
       table.name.startsWith('BhojDeals-') ||
       table.name.startsWith('Bhojdeals-')
     ))

@@ -1,7 +1,8 @@
 // Revenue & Operations Dashboard Module for TableCraft OS
 import { getState, setState, on, formatPrice, getLocalDateString } from '../state.js';
-import { getAllTables, getOrderByTable, getOrderItems, getAllOrders, getAllInventory, getTodayWaste, upsertInventory, addWasteLog } from '../db/indexedDB.js';
+import { getAllTables, getOrderByTable, getOrderItems, getAllOrders, getAllInventory, getTodayWaste, upsertInventory, addWasteLog, getRestaurantProfile } from '../db/indexedDB.js';
 import { queueSync } from '../db/syncEngine.js';
+import { checkIfDayClosed } from '../db/supabase.js';
 import { showToast } from './toasts.js';
 import { escapeHTML } from '../utils/security.js';
 import { v4 as uuidv4 } from 'uuid';
@@ -247,6 +248,23 @@ export function renderRevenueDashboard() {
 
   // Render Low Stock Alerts List
   renderLowStockAlerts(inventory);
+
+  // Check if day is closed and show banner
+  const banner = document.getElementById('closing-report-banner');
+  if (banner) {
+    if (state.userRole === 'admin') {
+      getRestaurantProfile().then(profile => {
+        if (profile && profile.id) {
+          checkIfDayClosed(profile.id).then(isClosed => {
+            if (isClosed) banner.classList.remove('hidden');
+            else banner.classList.add('hidden');
+          });
+        }
+      });
+    } else {
+      banner.classList.add('hidden');
+    }
+  }
 
   // Render Inventory Quick Adjust Grid
   renderInventoryQuickAdjust(inventory);

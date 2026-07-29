@@ -3,6 +3,8 @@
 import { getState, setState, on } from '../state.js';
 import { showToast } from './toasts.js';
 import { logoutUser, updateDisplayName, changePassword } from '../db/auth.js';
+import { getRestaurantProfile, upsertRestaurant } from '../db/indexedDB.js';
+import { queueSync } from '../db/syncEngine.js';
 
 const ROLE_PAGES = {
   admin: ['overview', 'tables', 'kitchen', 'inventory', 'staff'],
@@ -42,6 +44,18 @@ export function initSidebar() {
 
   const role = getState().userRole;
   const allowedPages = role ? ROLE_PAGES[role] : [];
+
+  // Toggle Admin Closing Settings visibility
+  const btnClosingDesktop = document.getElementById('btn-closing-settings-desktop');
+  const btnClosingMobile = document.getElementById('btn-closing-settings-mobile');
+  if (btnClosingDesktop) {
+    if (role === 'admin') btnClosingDesktop.classList.remove('hidden');
+    else btnClosingDesktop.classList.add('hidden');
+  }
+  if (btnClosingMobile) {
+    if (role === 'admin') btnClosingMobile.classList.remove('hidden');
+    else btnClosingMobile.classList.add('hidden');
+  }
 
   const allNavItems = [
     { id: 'overview', name: 'Overview', icon: 'dashboard' },
@@ -221,6 +235,112 @@ export function initSidebar() {
 
       btn.innerHTML = originalText;
       btn.disabled = false;
+    });
+  }
+
+  // Closing Settings Modal Logic
+  const modalClosing = document.getElementById('modal-closing-settings');
+  const btnCloseClosing = document.getElementById('btn-close-closing-modal');
+  const backdropClosing = document.getElementById('closing-modal-backdrop');
+  const formEditClosing = document.getElementById('form-edit-closing-time');
+  const btnManualClose = document.getElementById('btn-manual-close-day');
+
+  async function openClosingModal() {
+    if (!modalClosing) return;
+    const profile = await getRestaurantProfile();
+    if (profile) {
+      document.getElementById('closing-time-input').value = profile.closing_time || '21:00';
+    }
+    modalClosing.classList.remove('hidden');
+  }
+
+  function closeClosingModal() {
+    if (modalClosing) modalClosing.classList.add('hidden');
+  }
+
+  if (btnClosingDesktop) btnClosingDesktop.addEventListener('click', openClosingModal);
+  if (btnClosingMobile) btnClosingMobile.addEventListener('click', openClosingModal);
+  if (btnCloseClosing) btnCloseClosing.addEventListener('click', closeClosingModal);
+  if (backdropClosing) backdropClosing.addEventListener('click', closeClosingModal);
+
+  if (formEditClosing) {
+    formEditClosing.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const newTime = document.getElementById('closing-time-input').value;
+      if (!newTime) return;
+
+      const btn = document.getElementById('btn-save-closing-time');
+      const originalText = btn.textContent;
+      btn.textContent = 'Saving...';
+      btn.disabled = true;
+
+      try {
+        let profile = await getRestaurantProfile();
+        if (!profile) profile = { name: 'My Restaurant' };
+        
+        profile.closing_time = newTime;
+        await upsertRestaurant(profile);
+        queueSync({ table: 'restaurants' });
+        
+        showToast('Closing time updated successfully.', 'success');
+        closeClosingModal();
+      } catch (err) {
+        showToast('Failed to update closing time.', 'error');
+        console.error(err);
+      } finally {
+        btn.textContent = originalText;
+        btn.disabled = false;
+      }
+    });
+  }
+
+  if (btnManualClose) {
+    btnManualClose.addEventListener('click', async () => {
+      const btn = btnManualClose;
+      const originalText = btn.innerHTML;
+      btn.innerHTML = '<span class="material-symbols-outlined text-[18px]">sync</span> Processing...';
+      btn.disabled = true;
+      btn.classList.add('opacity-50', 'cursor-not-allowed');
+
+      try {
+        const profile = await getRestaurantProfile();
+        if (!profile || !profile.id) {
+          throw new Error("Restaurant ID not found.");
+        }
+
+        const res = await fetch('https://restro-ai-three.vercel.app/reports/close-day', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ restaurant_id: profile.id })
+        });
+        
+        const data = await res.json();
+        
+        if (!res.ok) {
+          throw new Error(data.detail || data.error || 'Failed to close day');
+        }
+
+        if (data.status === 'already_sent') {
+          showToast('Day has already been closed.', 'info');
+        } else {
+          showToast(`Day closed successfully! Revenue: ₨${data.total_revenue || 0}`, 'success');
+        }
+        
+        closeClosingModal();
+        // Trigger dashboard re-render to show banner if needed
+        const revDash = document.getElementById('page-overview');
+        if (revDash && !revDash.classList.contains('hidden')) {
+          // Fire a dummy event to trigger dashboard refresh
+          setState('transactions', [...(getState().transactions || [])]);
+        }
+      } catch (err) {
+        showToast(err.message, 'error');
+        console.error(err);
+      } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+        btn.classList.remove('opacity-50', 'cursor-not-allowed');
+      }
     });
   }
 

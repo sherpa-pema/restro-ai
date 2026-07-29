@@ -185,7 +185,10 @@
         <div id="desktop-user-avatar" class="w-7 h-7 shrink-0 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-[10px]">U</div>
         <span id="desktop-user-name" class="font-label-md text-label-md font-bold text-primary truncate max-w-[120px]">...</span>
       </div>
-      <button id="btn-profile-settings-desktop" class="material-symbols-outlined text-on-surface-variant hover:text-primary transition-colors text-[20px]" title="Profile Settings">settings</button>
+      <div class="flex items-center gap-1">
+        <button id="btn-closing-settings-desktop" class="hidden material-symbols-outlined text-on-surface-variant hover:text-primary transition-colors text-[20px]" title="Closing Settings">schedule</button>
+        <button id="btn-profile-settings-desktop" class="material-symbols-outlined text-on-surface-variant hover:text-primary transition-colors text-[20px]" title="Profile Settings">settings</button>
+      </div>
     </div>
     <!-- Bottom icons -->
     <div class="pt-4 border-t border-outline-variant flex items-center justify-center gap-md">
@@ -209,6 +212,7 @@
       <div class="flex items-center gap-1 text-[10px] font-mono-md text-on-surface-variant ml-1">
         <span id="mobile-sync-dot" class="w-1.5 h-1.5 rounded-full bg-outline"></span>
       </div>
+      <button id="btn-closing-settings-mobile" class="hidden material-symbols-outlined text-on-surface-variant hover:text-primary transition-colors text-[20px] ml-1" title="Closing Settings">schedule</button>
       <button id="btn-profile-settings-mobile" class="w-6 h-6 shrink-0 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-[10px] ml-1 border border-primary/20" title="Profile Settings">U</button>
       <button id="btn-logout-mobile" class="material-symbols-outlined text-on-surface-variant hover:text-error transition-colors text-sm ml-1">logout</button>
     </div>
@@ -222,6 +226,15 @@
       <!-- PAGE: Overview (Revenue Dashboard) -->
       <!-- PAGE: Overview (Operational Dashboard) -->
       <div id="page-overview" class="page hidden">
+        <div id="closing-report-banner" class="hidden mb-md p-md bg-secondary/10 border border-secondary/20 text-secondary rounded-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-2 shadow-sm">
+          <div class="flex items-center gap-2">
+            <span class="material-symbols-outlined text-[24px]">check_circle</span>
+            <div>
+              <p class="font-headline-md font-bold text-sm tracking-tight text-secondary">Day Closed Successfully</p>
+              <p class="text-xs opacity-80 mt-0.5">The daily revenue report has been generated for this business day.</p>
+            </div>
+          </div>
+        </div>
         <!-- Dashboard Top Summary Cards -->
         <div class="grid grid-cols-2 md:grid-cols-4 gap-md mb-xl">
           <div class="bg-surface-container-lowest p-lg rounded-xl border border-outline-variant shadow-sm flex flex-col justify-between">
@@ -1207,6 +1220,39 @@
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Closing Settings Modal -->
+  <div id="modal-closing-settings" class="hidden fixed inset-0 z-[150] flex items-center justify-center">
+    <div id="closing-modal-backdrop" class="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity"></div>
+    <div class="relative bg-surface-container-lowest w-[90%] max-w-sm rounded-2xl border border-outline-variant shadow-2xl overflow-hidden flex flex-col page transition-page">
+      <div class="flex items-center justify-between p-lg border-b border-outline-variant">
+        <h2 class="font-headline-lg text-headline-lg text-primary tracking-tight">Closing Settings</h2>
+        <button id="btn-close-closing-modal" type="button" class="material-symbols-outlined text-on-surface-variant hover:text-primary transition-colors">close</button>
+      </div>
+      <div class="p-lg flex flex-col gap-lg">
+        <!-- Edit Time -->
+        <form id="form-edit-closing-time" class="flex flex-col gap-sm">
+          <label class="text-[10px] font-label-md text-on-surface-variant uppercase tracking-widest block mb-1">Daily Closing Time</label>
+          <div class="flex gap-2">
+            <input type="time" id="closing-time-input" required class="flex-1 h-10 px-3 bg-surface-container-lowest border border-outline-variant rounded-lg text-body-md focus:outline-none focus:border-primary">
+            <button type="submit" id="btn-save-closing-time" class="h-10 px-4 bg-primary text-on-primary rounded-lg font-label-md text-label-md hover:opacity-90 transition-all flex items-center gap-1">Save</button>
+          </div>
+        </form>
+
+        <div class="border-t border-outline-variant border-dashed my-2"></div>
+
+        <!-- Manual Override -->
+        <div class="flex flex-col gap-sm">
+          <h3 class="font-headline-md text-headline-md text-primary mb-1">Manual Action</h3>
+          <p class="text-[11px] text-on-surface-variant mb-2">Override the schedule and close the business day immediately. This will trigger the backend aggregation.</p>
+          <button type="button" id="btn-manual-close-day" class="h-10 px-4 bg-secondary text-on-primary rounded-lg font-label-md text-label-md hover:opacity-90 transition-all w-full flex items-center justify-center gap-2 shadow-sm font-bold">
+            <span class="material-symbols-outlined text-[18px]">receipt_long</span>
+            Close Day Now
+          </button>
+        </div>
       </div>
     </div>
   </div>

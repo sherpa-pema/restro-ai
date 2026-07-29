@@ -11,6 +11,8 @@ import json
 import re
 import sys
 import io
+import pytz
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
 # Force UTF-8 encoding for standard output and error streams on Windows
@@ -54,6 +56,9 @@ print(f"[Backend] Loaded NVIDIA API Key Length: {len(NVIDIA_API_KEY) if NVIDIA_A
 # ─────────────────────────────────────────────
 # Pydantic Schemas
 # ─────────────────────────────────────────────
+
+class CloseDayRequest(BaseModel):
+    restaurant_id: str
 
 class MenuItemSchema(BaseModel):
     name: str
@@ -177,54 +182,30 @@ def parse_json_from_text(text: str) -> dict:
 # Endpoint: Bill Counter
 # ─────────────────────────────────────────────
 
-BILL_COUNTER_FILE = os.path.join(os.path.dirname(__file__), "bill_counter.json")
-
-def get_next_bill_number() -> int:
-    import datetime
-    today = datetime.date.today().isoformat()
-    
-    # Read existing
-    if os.path.exists(BILL_COUNTER_FILE):
-        try:
-            with open(BILL_COUNTER_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        except Exception:
-            data = {"date": today, "counter": 0}
-    else:
-        data = {"date": today, "counter": 0}
-        
-    # Reset if new day
-    if data.get("date") != today:
-        data = {"date": today, "counter": 0}
-        
-    # Increment
-    data["counter"] += 1
-    
-    # Save
-    with open(BILL_COUNTER_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f)
-        
-    return data["counter"]
-
 @app.get("/health")
 async def health_check():
-    import datetime
-    last_bill = 0
-    if os.path.exists(BILL_COUNTER_FILE):
-        try:
-            with open(BILL_COUNTER_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                if data.get("date") == datetime.date.today().isoformat():
-                    last_bill = data.get("counter", 0)
-        except Exception:
-            pass
-    return {"ok": True, "last_bill": last_bill}
+    return {"ok": True}
 
 @app.get("/next-bill")
 async def get_next_bill():
     try:
-        bill_no = get_next_bill_number()
-        return {"bill_no": f"{bill_no:03d}"}
+        supabase_url = os.getenv("VITE_SUPABASE_URL")
+        supabase_key = os.getenv("VITE_SUPABASE_ANON_KEY")
+        if supabase_url and supabase_key:
+            headers = {
+                "apikey": supabase_key,
+                "Authorization": f"Bearer {supabase_key}",
+                "Content-Type": "application/json"
+            }
+            res = requests.post(f"{supabase_url}/rest/v1/rpc/get_next_bill_number", headers=headers, timeout=5)
+            if res.status_code == 200:
+                bill_no = res.json()
+                return {"bill_no": bill_no}
+            else:
+                print(f"[Backend] Supabase RPC failed: {res.status_code} - {res.text}")
+                raise HTTPException(status_code=500, detail="Failed to fetch bill number from Supabase")
+        else:
+            raise HTTPException(status_code=500, detail="Supabase credentials not configured in backend")
     except Exception as e:
         print(f"[Backend] Error generating bill number: {e}")
         raise HTTPException(status_code=500, detail="Failed to generate bill number")
@@ -318,6 +299,131 @@ async def ai_parse(req: AIParseRequest):
         raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
 
 
+
+# ─────────────────────────────────────────────
+# Endpoint: Daily Closing Report
+# ─────────────────────────────────────────────
+
+@app.post("/reports/close-day")
+async def close_day(req: CloseDayRequest):
+    supabase_url = os.getenv("VITE_SUPABASE_URL")
+    supabase_key = os.getenv("VITE_SUPABASE_ANON_KEY")
+    if not supabase_url or not supabase_key:
+        raise HTTPException(status_code=500, detail="Supabase credentials not configured in backend")
+        
+    headers = {
+        "apikey": supabase_key,
+        "Authorization": f"Bearer {supabase_key}",
+        "Content-Type": "application/json"
+    }
+
+    try:
+        # 1. Fetch Restaurant Profile
+        res = requests.get(f"{supabase_url}/rest/v1/restaurants?id=eq.{req.restaurant_id}&select=timezone", headers=headers, timeout=5)
+        if res.status_code != 200 or not res.json():
+            raise HTTPException(status_code=404, detail="Restaurant not found")
+            
+        restaurant = res.json()[0]
+        timezone_str = restaurant.get("timezone", "Asia/Kathmandu")
+        
+        # 2. Time Window Calculation (Manual Block-Based)
+        try:
+            tz = pytz.timezone(timezone_str)
+        except pytz.UnknownTimeZoneError:
+            tz = pytz.timezone("Asia/Kathmandu")
+            
+        now = datetime.now(tz)
+        
+        # Business date is (now - 6 hours) to cleanly group post-midnight closings to the previous day
+        business_date = (now - timedelta(hours=6)).date()
+        business_date_str = business_date.isoformat()
+        
+        # Fetch the last successful closing report to determine the start_time
+        res = requests.get(
+            f"{supabase_url}/rest/v1/daily_closing_reports?restaurant_id=eq.{req.restaurant_id}&status=eq.sent&order=generated_at.desc&limit=1",
+            headers=headers, timeout=5
+        )
+        
+        if res.status_code == 200 and res.json():
+            last_report = res.json()[0]
+            start_iso = last_report.get("generated_at")
+            start_time = datetime.fromisoformat(start_iso.replace("Z", "+00:00"))
+            now_utc = datetime.now(pytz.utc)
+            
+            # Prevent double-clicking within 5 minutes
+            if (now_utc - start_time).total_seconds() < 300:
+                return {"message": "Day was just closed recently.", "business_date": business_date_str, "status": "already_sent"}
+        else:
+            # Fallback if this is the very first time they are closing
+            start_time = now - timedelta(hours=24)
+            start_iso = start_time.isoformat()
+            
+        end_time = now
+        end_iso = end_time.isoformat()
+
+        
+        # Query transactions within the window
+        res = requests.get(f"{supabase_url}/rest/v1/transactions?paid_at=gte.{start_iso}&paid_at=lte.{end_iso}&select=amount,payment_method,bill_number", headers=headers, timeout=5)
+        if res.status_code != 200:
+            raise HTTPException(status_code=500, detail="Failed to fetch transactions")
+            
+        transactions = res.json()
+        
+        total_revenue = 0.0
+        transaction_count = len(transactions)
+        breakdown = {}
+        opening_bill = None
+        closing_bill = None
+        
+        for tx in transactions:
+            amount = float(tx.get("amount", 0))
+            method = tx.get("payment_method", "cash")
+            bill_no = tx.get("bill_number")
+            
+            total_revenue += amount
+            breakdown[method] = breakdown.get(method, 0) + amount
+            
+            if bill_no:
+                if opening_bill is None or bill_no < opening_bill:
+                    opening_bill = bill_no
+                if closing_bill is None or bill_no > closing_bill:
+                    closing_bill = bill_no
+                    
+        # 4. Database Update
+        payload = {
+            "restaurant_id": req.restaurant_id,
+            "business_date": business_date_str,
+            "opening_bill_number": opening_bill,
+            "closing_bill_number": closing_bill,
+            "total_revenue": total_revenue,
+            "transaction_count": transaction_count,
+            "breakdown_by_payment_method": breakdown,
+            "status": "sent"
+        }
+        
+        res = requests.post(f"{supabase_url}/rest/v1/daily_closing_reports", headers=headers, json=payload, timeout=5)
+        if res.status_code not in [200, 201]:
+            print(f"[Backend] Failed to insert closing report: {res.text}")
+            raise HTTPException(status_code=500, detail="Failed to save closing report")
+            
+        # 5. Reset the Bill Number Sequence
+        rpc_res = requests.post(f"{supabase_url}/rest/v1/rpc/reset_bill_sequence", headers=headers, timeout=5)
+        if rpc_res.status_code not in [200, 204]:
+            print(f"[Backend] Failed to reset bill sequence: {rpc_res.text}")
+            # Non-fatal error, we can still return success for the closing
+            
+        return {
+            "message": "End of day closed successfully",
+            "business_date": business_date_str,
+            "total_revenue": total_revenue,
+            "transaction_count": transaction_count,
+            "breakdown": breakdown
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[Backend] Error closing day: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ─────────────────────────────────────────────
 # Endpoint: Print Receipt Server

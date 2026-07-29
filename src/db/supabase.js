@@ -686,3 +686,34 @@ export function subscribeToChanges(callbacks) {
   return channel;
 }
 
+/**
+ * Check if the day is already closed (has a 'sent' report) for the current business date.
+ * Uses a heuristic: if a 'sent' report was generated within the last 16 hours, it's considered closed.
+ */
+export async function checkIfDayClosed(restaurantId) {
+  if (!supabase) return false;
+  try {
+    const { data, error } = await supabase
+      .from('daily_closing_reports')
+      .select('business_date, status, generated_at')
+      .eq('restaurant_id', restaurantId)
+      .eq('status', 'sent')
+      .order('generated_at', { ascending: false })
+      .limit(1);
+      
+    if (error) throw error;
+    
+    if (data && data.length > 0) {
+      const generated = new Date(data[0].generated_at);
+      const now = new Date();
+      const diffHours = (now - generated) / (1000 * 60 * 60);
+      if (diffHours < 16) {
+        return true;
+      }
+    }
+    return false;
+  } catch (err) {
+    console.error('[Supabase] Failed to check if day closed:', err);
+    return false;
+  }
+}
