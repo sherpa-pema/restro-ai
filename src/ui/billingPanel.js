@@ -5,6 +5,7 @@ import { getAllTables, getTable, deleteTable, upsertTable, getOrderByTable, upda
 import { queueSync } from '../db/syncEngine.js';
 import { showToast } from './toasts.js';
 import { escapeHTML } from '../utils/security.js';
+import { logVoid } from '../utils/voidLogger.js';
 import { v4 as uuidv4 } from 'uuid';
 
 /**
@@ -34,13 +35,16 @@ export function initBillingPanel() {
         if (order.channel === 'Takeout') txCategory = 'Regular';
         else if (order.channel) txCategory = order.channel;
 
+        const paymentMethodEl = document.getElementById('billing-payment-method');
+        const selectedPaymentMethod = paymentMethodEl ? paymentMethodEl.value : 'cash';
+
         // 1. Create Transaction
         const transaction = {
           id: uuidv4(),
           order_id: order.id,
           table_name: table.name,
           amount: order.total,
-          payment_method: 'cash',
+          payment_method: selectedPaymentMethod,
           currency: state.currency,
           category: txCategory,
           waiter_name: order.waiter_name || null,
@@ -114,7 +118,7 @@ export function initBillingPanel() {
     });
   }
 
-  // Handle Clear action (cancels/deletes current order)
+  // Handle Clear action (cancels/deletes current order) via custom modal
   if (btnClear) {
     btnClear.addEventListener('click', async () => {
       const state = getState();
@@ -126,11 +130,50 @@ export function initBillingPanel() {
       const table = await getTable(selectedTableId);
       if (!table) return;
 
-      if (confirm(`Clear all items and cancel the order for Table ${table.name}?`)) {
+      // Show void confirmation modal
+      const modal = document.getElementById('void-confirm-modal');
+      const msgEl = document.getElementById('void-confirm-message');
+      const reasonInput = document.getElementById('void-reason-input');
+      const staffInput = document.getElementById('void-staff-input');
+      const okBtn = document.getElementById('void-confirm-ok-btn');
+      const cancelBtn = document.getElementById('void-confirm-cancel-btn');
+
+      if (!modal) return;
+
+      // Reset modal fields
+      if (msgEl) msgEl.textContent = `Cancel and clear all items for ${table.name}?`;
+      if (reasonInput) reasonInput.value = '';
+      if (staffInput) staffInput.value = '';
+      modal.classList.remove('hidden');
+
+      // Wait for user response via one-shot listeners
+      const cleanup = () => {
+        modal.classList.add('hidden');
+        okBtn?.removeEventListener('click', onConfirm);
+        cancelBtn?.removeEventListener('click', onCancel);
+      };
+
+      const onCancel = () => cleanup();
+
+      const onConfirm = async () => {
+        const reason = reasonInput?.value?.trim() || null;
+        const voidedBy = staffInput?.value?.trim() || null;
+        cleanup();
+
         try {
           const now = new Date().toISOString();
 
-          // 1. Delete order (cascade will delete items or we delete them in sync)
+          // Log void before deleting
+          await logVoid({
+            orderId: order.id,
+            tableName: table.name,
+            voidType: 'order_cancelled',
+            amount: order.total || 0,
+            reason,
+            voidedBy
+          });
+
+          // 1. Delete order
           await deleteOrder(order.id);
           await queueSync('orders', 'DELETE', { id: order.id });
 
@@ -154,12 +197,15 @@ export function initBillingPanel() {
           setState('tables', allTables);
           setState('selectedTableId', null);
 
-          showToast(`Table ${table.name} order cleared`, 'info');
+          showToast(`Table ${table.name} order cancelled`, 'info');
         } catch (err) {
           console.error(err);
           showToast('Failed to clear table order', 'error');
         }
-      }
+      };
+
+      okBtn?.addEventListener('click', onConfirm, { once: true });
+      cancelBtn?.addEventListener('click', onCancel, { once: true });
     });
   }
 
@@ -219,46 +265,73 @@ export function initBillingPanel() {
   }
 
   // Handle discount input change dynamically
+  const handleDiscountChange = async () => {
+    const state = getState();
+    const order = state.currentOrder;
+    const items = state.currentOrderItems;
+    if (!order) return;
+
+    const discountInput = document.getElementById('billing-discount-input');
+    const discountPercent = discountInput && discountInput.value !== '' ? (parseFloat(discountInput.value) || 0) : 0;
+    
+    let discountType = document.getElementById('billing-discount-type')?.value || 'none';
+    if (discountType === 'none' && discountPercent > 0) {
+      discountType = 'other';
+      const typeSelect = document.getElementById('billing-discount-type');
+      if (typeSelect) typeSelect.value = 'other';
+    } else if (discountPercent === 0) {
+      discountType = 'none';
+      const typeSelect = document.getElementById('billing-discount-type');
+      if (typeSelect) typeSelect.value = 'none';
+    }
+
+    const discountReason = document.getElementById('billing-discount-reason')?.value || null;
+    const discountAppliedBy = document.getElementById('billing-discount-applied-by')?.value || null;
+
+    const subtotal = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
+    const taxConfig = state.taxConfig;
+    const tax = subtotal * (taxConfig.vat / 100);
+    const service = subtotal * (taxConfig.service / 100);
+    const discount = subtotal * (discountPercent / 100);
+    const total = subtotal + tax + service - discount;
+
+    const updatedOrder = {
+      ...order,
+      subtotal: Math.round(subtotal * 100) / 100,
+      tax: Math.round(tax * 100) / 100,
+      service_charge: Math.round(service * 100) / 100,
+      discount: Math.round(discount * 100) / 100,
+      total: Math.round(total * 100) / 100,
+      discount_type: discountType,
+      discount_reason: discountReason,
+      discount_applied_by: discountAppliedBy
+    };
+
+    try {
+      await updateOrder(updatedOrder);
+      await queueSync('orders', 'UPDATE', updatedOrder);
+
+      setState('currentOrder', updatedOrder);
+
+      const allTables = await getAllTables();
+      setState('tables', allTables);
+    } catch (err) {
+      console.error(err);
+      showToast('Failed to update discount', 'error');
+    }
+  };
+
   const discountInput = document.getElementById('billing-discount-input');
-  if (discountInput) {
-    discountInput.addEventListener('input', async () => {
-      const state = getState();
-      const order = state.currentOrder;
-      const items = state.currentOrderItems;
-      if (!order) return;
-
-      const discountPercent = discountInput.value !== '' ? (parseFloat(discountInput.value) || 0) : 0;
-
-      const subtotal = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
-      const taxConfig = state.taxConfig;
-      const tax = subtotal * (taxConfig.vat / 100);
-      const service = subtotal * (taxConfig.service / 100);
-      const discount = subtotal * (discountPercent / 100);
-      const total = subtotal + tax + service - discount;
-
-      const updatedOrder = {
-        ...order,
-        subtotal: Math.round(subtotal * 100) / 100,
-        tax: Math.round(tax * 100) / 100,
-        service_charge: Math.round(service * 100) / 100,
-        discount: Math.round(discount * 100) / 100,
-        total: Math.round(total * 100) / 100
-      };
-
-      try {
-        await updateOrder(updatedOrder);
-        await queueSync('orders', 'UPDATE', updatedOrder);
-
-        setState('currentOrder', updatedOrder);
-
-        const allTables = await getAllTables();
-        setState('tables', allTables);
-      } catch (err) {
-        console.error(err);
-        showToast('Failed to update discount', 'error');
-      }
-    });
-  }
+  if (discountInput) discountInput.addEventListener('input', handleDiscountChange);
+  
+  const discountTypeEl = document.getElementById('billing-discount-type');
+  if (discountTypeEl) discountTypeEl.addEventListener('change', handleDiscountChange);
+  
+  const discountReasonEl = document.getElementById('billing-discount-reason');
+  if (discountReasonEl) discountReasonEl.addEventListener('change', handleDiscountChange);
+  
+  const discountAppliedByEl = document.getElementById('billing-discount-applied-by');
+  if (discountAppliedByEl) discountAppliedByEl.addEventListener('change', handleDiscountChange);
 
   // Bind state listeners
   on('selectedTableId', loadSelectedTableOrder);
@@ -284,6 +357,14 @@ async function loadSelectedTableOrder(tableId) {
 
     const discountInput = document.getElementById('billing-discount-input');
     if (discountInput) discountInput.value = '';
+    const discountType = document.getElementById('billing-discount-type');
+    if (discountType) discountType.value = 'none';
+    const discountReason = document.getElementById('billing-discount-reason');
+    if (discountReason) discountReason.value = '';
+    const discountAppliedBy = document.getElementById('billing-discount-applied-by');
+    if (discountAppliedBy) discountAppliedBy.value = '';
+    const paymentMethodSelect = document.getElementById('billing-payment-method');
+    if (paymentMethodSelect) paymentMethodSelect.value = 'cash';
 
     setState('currentOrder', null);
     setState('currentOrderItems', []);
@@ -302,12 +383,20 @@ async function loadSelectedTableOrder(tableId) {
       setState('currentOrder', order);
       setState('currentOrderItems', items);
 
-      // Populate discount input field
+      // Populate discount input fields
       const discountInput = document.getElementById('billing-discount-input');
       if (discountInput) {
         const discountPercent = order.subtotal > 0 ? (order.discount / order.subtotal) * 100 : 0;
         discountInput.value = discountPercent > 0 ? Math.round(discountPercent) : '';
       }
+      const discountType = document.getElementById('billing-discount-type');
+      if (discountType) discountType.value = order.discount_type || 'none';
+      const discountReason = document.getElementById('billing-discount-reason');
+      if (discountReason) discountReason.value = order.discount_reason || '';
+      const discountAppliedBy = document.getElementById('billing-discount-applied-by');
+      if (discountAppliedBy) discountAppliedBy.value = order.discount_applied_by || '';
+      const paymentMethodSelect = document.getElementById('billing-payment-method');
+      if (paymentMethodSelect) paymentMethodSelect.value = 'cash';
 
       if (placeholder) placeholder.classList.add('hidden');
       if (content) content.classList.remove('hidden');
@@ -317,6 +406,14 @@ async function loadSelectedTableOrder(tableId) {
 
       const discountInput = document.getElementById('billing-discount-input');
       if (discountInput) discountInput.value = '';
+      const discountType = document.getElementById('billing-discount-type');
+      if (discountType) discountType.value = 'none';
+      const discountReason = document.getElementById('billing-discount-reason');
+      if (discountReason) discountReason.value = '';
+      const discountAppliedBy = document.getElementById('billing-discount-applied-by');
+      if (discountAppliedBy) discountAppliedBy.value = '';
+      const paymentMethodSelect = document.getElementById('billing-payment-method');
+      if (paymentMethodSelect) paymentMethodSelect.value = 'cash';
 
       if (placeholder) placeholder.classList.remove('hidden');
       if (content) content.classList.add('hidden');
@@ -538,7 +635,16 @@ async function decrementItem(itemId) {
       await updateOrderItem(item);
       await queueSync('order_items', 'UPDATE', item);
     } else {
-      // 2. Remove Item completely
+      // 2. Remove Item completely — log void
+      const table = await getTable(selectedTableId);
+      await logVoid({
+        orderId: order.id,
+        tableName: table?.name || null,
+        voidType: 'item_removed',
+        amount: item.price * 1,
+        reason: null,
+        voidedBy: null
+      });
       await removeOrderItem(itemId);
       await queueSync('order_items', 'DELETE', { id: itemId });
     }

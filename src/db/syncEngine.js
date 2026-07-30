@@ -39,7 +39,8 @@ import {
   pushRestaurantProfile,
   pullRestaurantProfile,
   pushStaffProfile,
-  pullStaffProfiles
+  pullStaffProfiles,
+  pushOrderVoid
 } from './supabase.js';
 
 import { setState, getState } from '../state.js';
@@ -59,7 +60,8 @@ const PUSH_FN_MAP = {
   suppliers: pushSupplier,
   recipes: pushRecipe,
   restaurants: pushRestaurantProfile,
-  staff_profiles: pushStaffProfile
+  staff_profiles: pushStaffProfile,
+  order_voids: pushOrderVoid
 };
 
 // ─────────────────────────────────────────────

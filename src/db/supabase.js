@@ -142,6 +142,9 @@ export async function pushOrder(order) {
       tax: order.tax,
       service_charge: order.service_charge,
       discount: order.discount,
+      discount_type: order.discount_type || 'none',
+      discount_reason: order.discount_reason || null,
+      discount_applied_by: order.discount_applied_by || null,
       total: order.total,
       waiter_id: order.waiter_id || null,
       waiter_name: order.waiter_name || null,
@@ -170,7 +173,8 @@ export async function pushOrderItem(item) {
       menu_item_id: item.menu_item_id,
       name: item.name,
       price: item.price,
-      quantity: item.quantity
+      quantity: item.quantity,
+      category: item.category || 'General'
     };
     const { error } = await supabase
       .from('order_items')
@@ -238,6 +242,30 @@ export async function pushTransaction(tx) {
     return true;
   } catch (err) {
     console.error('[Supabase] pushTransaction failed:', err);
+    throw err;
+  }
+}
+
+/** Upsert a void/cancellation log record to Supabase. */
+export async function pushOrderVoid(record) {
+  try {
+    const dbRecord = {
+      id: record.id,
+      order_id: record.order_id || null,
+      table_name: record.table_name || null,
+      void_type: record.void_type,
+      amount: record.amount,
+      reason: record.reason || null,
+      voided_by: record.voided_by || null,
+      voided_at: record.voided_at
+    };
+    const { error } = await supabase
+      .from('order_voids')
+      .upsert(dbRecord, { onConflict: 'id' });
+    if (error) throw error;
+    return true;
+  } catch (err) {
+    console.error('[Supabase] pushOrderVoid failed:', err);
     throw err;
   }
 }
@@ -715,5 +743,153 @@ export async function checkIfDayClosed(restaurantId) {
   } catch (err) {
     console.error('[Supabase] Failed to check if day closed:', err);
     return false;
+  }
+}
+
+// ─────────────────────────────────────────────
+// End of Day Closing Ops (Client-Side DB ops)
+// ─────────────────────────────────────────────
+
+/**
+ * Generate a comprehensive closing report from Supabase records.
+ */
+export async function generateClosingReport(restaurantId) {
+  try {
+    // 1. Get transactions for today
+    const { data: txData } = await supabase.from('transactions').select('*');
+    // 2. Get completed orders today
+    const { data: orderData } = await supabase.from('orders').select('*');
+    const completedOrders = (orderData || []).filter(o => o.status === 'paid');
+    
+    // 3. Get order_items for completed orders
+    const orderIds = completedOrders.map(o => o.id);
+    let orderItemsData = [];
+    if (orderIds.length > 0) {
+      const { data: items } = await supabase.from('order_items').select('*').in('order_id', orderIds);
+      orderItemsData = items || [];
+    }
+    
+    // 4. Get order_voids
+    const { data: voidsData } = await supabase.from('order_voids').select('*');
+    
+    // Aggregations
+    let grossSales = 0;
+    let netSales = 0;
+    let totalTax = 0;
+    let totalServiceCharge = 0;
+    let totalDiscounts = 0;
+    const salesByCategory = {};
+    const paymentBreakdown = {};
+    const discountLogs = [];
+    let voidedCount = 0;
+    let voidedAmount = 0;
+    let complimentaryCount = 0;
+    let complimentaryAmount = 0;
+    
+    // Categories
+    orderItemsData.forEach(item => {
+      const cat = item.category || 'General';
+      salesByCategory[cat] = (salesByCategory[cat] || 0) + Number(item.price || 0) * (item.quantity || 1);
+    });
+    
+    // Orders / Discounts
+    completedOrders.forEach(o => {
+      grossSales += Number(o.subtotal || 0);
+      totalTax += Number(o.tax || 0);
+      totalServiceCharge += Number(o.service_charge || 0);
+      
+      const disc = Number(o.discount || 0);
+      totalDiscounts += disc;
+      if (disc > 0 && o.discount_type !== 'none') {
+        discountLogs.push({
+          order_id: o.id,
+          amount: disc,
+          type: o.discount_type,
+          reason: o.discount_reason,
+          by: o.discount_applied_by
+        });
+      }
+      
+      if (o.discount_type === 'complimentary') {
+        complimentaryCount++;
+        complimentaryAmount += disc;
+      }
+    });
+    netSales = Math.max(0, grossSales - totalDiscounts);
+    
+    // Payments
+    (txData || []).forEach(tx => {
+      const pm = tx.payment_method || 'other';
+      paymentBreakdown[pm] = (paymentBreakdown[pm] || 0) + Number(tx.amount || 0);
+    });
+    
+    // Voids
+    const voids = voidsData || [];
+    voidedCount = voids.length;
+    voidedAmount = voids.reduce((sum, v) => sum + Number(v.amount || 0), 0);
+    
+    return {
+      restaurant_id: restaurantId,
+      business_date: new Date().toISOString().split('T')[0],
+      total_revenue: netSales + totalTax + totalServiceCharge,
+      transaction_count: (txData || []).length,
+      gross_sales: grossSales,
+      net_sales: netSales,
+      total_tax: totalTax,
+      total_service_charge: totalServiceCharge,
+      total_discounts: totalDiscounts,
+      total_complimentary: complimentaryAmount,
+      sales_by_category: salesByCategory,
+      breakdown_by_payment_method: paymentBreakdown,
+      discount_log: discountLogs,
+      voided_count: voidedCount,
+      voided_amount: voidedAmount,
+      void_log: voids,
+      status: 'sent'
+    };
+  } catch (err) {
+    console.error('[Supabase] generateClosingReport failed:', err);
+    throw err;
+  }
+}
+
+/**
+ * Move all transactions to transactions_backup and empty transactions table.
+ */
+export async function archiveTransactions(businessDate) {
+  try {
+    // 1. Fetch all transactions
+    const { data: txData, error: fetchErr } = await supabase.from('transactions').select('*');
+    if (fetchErr) throw fetchErr;
+    if (!txData || txData.length === 0) return true; // Nothing to archive
+    
+    // 2. Add business_date and insert to backup
+    const backupData = txData.map(tx => ({ ...tx, business_date: businessDate }));
+    const { error: insertErr } = await supabase.from('transactions_backup').insert(backupData);
+    if (insertErr) throw insertErr;
+    
+    // 3. Delete from transactions in batches if necessary, but typically < 1000 so one go is fine
+    const txIds = txData.map(t => t.id);
+    const { error: deleteErr } = await supabase.from('transactions').delete().in('id', txIds);
+    if (deleteErr) throw deleteErr;
+    
+    return true;
+  } catch (err) {
+    console.error('[Supabase] archiveTransactions failed:', err);
+    throw err;
+  }
+}
+
+/**
+ * Save the generated report to daily_closing_reports.
+ */
+export async function saveClosingReport(reportData) {
+  try {
+    const { error } = await supabase.from('daily_closing_reports').insert([reportData]);
+    if (error) throw error;
+    return true;
+  } catch (err) {
+    console.error('[Supabase] saveClosingReport failed:', err);
+    throw err;
   }
 }

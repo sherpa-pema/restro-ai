@@ -218,6 +218,32 @@ export async function updateOrderItem(item) {
 }
 
 // ─────────────────────────────────────────────
+// Order Voids CRUD
+// ─────────────────────────────────────────────
+
+/** Add a void/cancellation log record. */
+export async function addOrderVoid(record) {
+  await db.table('orderVoids').put(record);
+}
+
+/** Get all void records. */
+export async function getOrderVoids() {
+  return db.table('orderVoids').toArray();
+}
+
+/** Get void records for a specific order. */
+export async function getOrderVoidsByOrder(orderId) {
+  if (!orderId) return [];
+  try {
+    return await db.table('orderVoids').where('order_id').equals(orderId).toArray();
+  } catch (err) {
+    console.warn('[IndexedDB] getOrderVoidsByOrder fallback:', err);
+    const all = await db.table('orderVoids').toArray();
+    return all.filter((v) => v.order_id === orderId);
+  }
+}
+
+// ─────────────────────────────────────────────
 // Transactions
 // ─────────────────────────────────────────────
 

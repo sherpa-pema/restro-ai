@@ -297,10 +297,7 @@ export function initSidebar() {
   if (btnManualClose) {
     btnManualClose.addEventListener('click', async () => {
       const btn = btnManualClose;
-      const originalText = btn.innerHTML;
-      btn.innerHTML = '<span class="material-symbols-outlined text-[18px]">sync</span> Processing...';
       btn.disabled = true;
-      btn.classList.add('opacity-50', 'cursor-not-allowed');
 
       try {
         const profile = await getRestaurantProfile();
@@ -308,38 +305,170 @@ export function initSidebar() {
           throw new Error("Restaurant ID not found.");
         }
 
-        const res = await fetch('https://restro-ai-three.vercel.app/reports/close-day', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ restaurant_id: profile.id })
+        // Hide closing settings modal and show processing overlay
+        closeClosingModal();
+        const processingOverlay = document.getElementById('closing-report-processing');
+        if (processingOverlay) processingOverlay.classList.remove('hidden');
+
+        // Dynamic import dependencies
+        const html2canvas = (await import('html2canvas')).default;
+        const { generateClosingReport, archiveTransactions, saveClosingReport } = await import('../db/supabase.js');
+        const { formatPrice } = await import('../state.js');
+
+        // Step 1: Generate report
+        const reportData = await generateClosingReport(profile.id);
+
+        // Step 2: Archive transactions
+        await archiveTransactions(reportData.business_date);
+
+        // Step 3: Save to Supabase
+        await saveClosingReport(reportData);
+
+        // Build UI report
+        document.getElementById('cr-restaurant-name').textContent = profile.business_name || 'My Restaurant';
+        document.getElementById('cr-date-time').textContent = `Date: ${reportData.business_date} | Generated: ${new Date().toLocaleTimeString()}`;
+        
+        document.getElementById('cr-gross-sales').textContent = formatPrice(reportData.gross_sales);
+        document.getElementById('cr-total-discounts').textContent = `-${formatPrice(reportData.total_discounts)}`;
+        document.getElementById('cr-total-taxes').textContent = formatPrice(reportData.total_tax + reportData.total_service_charge);
+        document.getElementById('cr-net-sales').textContent = formatPrice(reportData.net_sales);
+
+        // Build category breakdown
+        const categoryContainer = document.getElementById('cr-category-breakdown');
+        categoryContainer.innerHTML = '';
+        Object.entries(reportData.sales_by_category || {}).forEach(([cat, amount]) => {
+          categoryContainer.innerHTML += `
+            <div class="flex justify-between">
+              <span class="text-on-surface-variant">${cat}</span>
+              <span class="font-bold text-on-surface">${formatPrice(amount)}</span>
+            </div>
+          `;
         });
+
+        // Build payment breakdown
+        const paymentContainer = document.getElementById('cr-payment-breakdown');
+        paymentContainer.innerHTML = '';
+        Object.entries(reportData.breakdown_by_payment_method || {}).forEach(([pm, amount]) => {
+          paymentContainer.innerHTML += `
+            <div class="bg-surface-container-lowest p-2 rounded-lg border border-outline-variant text-center">
+              <p class="text-[10px] text-on-surface-variant uppercase tracking-widest mb-1">${pm}</p>
+              <p class="font-mono-md font-bold text-secondary">${formatPrice(amount)}</p>
+            </div>
+          `;
+        });
+
+        // Build exceptions
+        document.getElementById('cr-voids-total').textContent = `${reportData.voided_count} items (${formatPrice(reportData.voided_amount)})`;
+        document.getElementById('cr-complimentary-total').textContent = `(Discount: ${formatPrice(reportData.total_complimentary)})`;
         
-        const data = await res.json();
+        const exceptionsContainer = document.getElementById('cr-exception-logs');
+        exceptionsContainer.innerHTML = '';
+        const allExceptions = [
+          ...(reportData.void_log || []).map(v => `Void: ${formatPrice(v.amount)} - ${v.reason || 'No reason'} (${v.voided_by || 'Unknown'})`),
+          ...(reportData.discount_log || []).map(d => `Discount: ${formatPrice(d.amount)} - ${d.reason || 'No reason'} (${d.by || 'Unknown'})`)
+        ];
         
-        if (!res.ok) {
-          throw new Error(data.detail || data.error || 'Failed to close day');
+        if (allExceptions.length === 0) {
+          exceptionsContainer.innerHTML = '<p class="text-on-surface-variant italic">No exceptions logged today.</p>';
+        } else {
+          allExceptions.forEach(msg => {
+            exceptionsContainer.innerHTML += `<p>• ${msg}</p>`;
+          });
         }
 
-        if (data.status === 'already_sent') {
-          showToast('Day has already been closed.', 'info');
-        } else {
-          showToast(`Day closed successfully! Revenue: ₨${data.total_revenue || 0}`, 'success');
-        }
+        // Hide processing and show result modal
+        if (processingOverlay) processingOverlay.classList.add('hidden');
         
-        closeClosingModal();
-        // Trigger dashboard re-render to show banner if needed
-        const revDash = document.getElementById('page-overview');
-        if (revDash && !revDash.classList.contains('hidden')) {
-          // Fire a dummy event to trigger dashboard refresh
-          setState('transactions', [...(getState().transactions || [])]);
-        }
+        const reportModal = document.getElementById('modal-closing-report-result');
+        if (reportModal) reportModal.classList.remove('hidden');
+
+        // Setup Buttons
+        const closeBtn = document.getElementById('btn-close-report-modal');
+        const saveBtn = document.getElementById('btn-save-closing-report');
+        const copyBtn = document.getElementById('btn-copy-closing-report');
+
+        const closeHandler = () => {
+          reportModal.classList.add('hidden');
+          closeBtn.removeEventListener('click', closeHandler);
+        };
+        closeBtn.addEventListener('click', closeHandler);
+
+        // Save to photos handler
+        const saveHandler = async () => {
+          const content = document.getElementById('closing-report-content');
+          saveBtn.disabled = true;
+          saveBtn.innerHTML = '<span class="material-symbols-outlined text-[16px] animate-spin">sync</span> Saving...';
+          try {
+            const canvas = await html2canvas(content, { backgroundColor: '#1a1a1a', scale: 2 });
+            const link = document.createElement('a');
+            link.download = `Closing_Report_${reportData.business_date}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+            showToast('Report saved to photos.', 'success');
+          } catch (e) {
+            console.error('Screenshot failed', e);
+            showToast('Failed to save screenshot.', 'error');
+          } finally {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = '<span class="material-symbols-outlined text-[16px]">download</span> Save to Photos';
+          }
+        };
+        
+        // Remove old listeners to avoid stacking
+        saveBtn.replaceWith(saveBtn.cloneNode(true));
+        document.getElementById('btn-save-closing-report').addEventListener('click', saveHandler);
+
+        // Copy to clipboard handler
+        const copyHandler = async () => {
+          try {
+            const content = document.getElementById('closing-report-content');
+            // Check if Clipboard API supports copying images (supported on Chrome/Edge)
+            if (navigator.clipboard && navigator.clipboard.write) {
+              const canvas = await html2canvas(content, { backgroundColor: '#1a1a1a', scale: 2 });
+              canvas.toBlob(async (blob) => {
+                if (blob) {
+                  try {
+                    await navigator.clipboard.write([
+                      new ClipboardItem({ [blob.type]: blob })
+                    ]);
+                    showToast('Report image copied to clipboard!', 'success');
+                  } catch (e) {
+                    fallbackCopyText();
+                  }
+                }
+              }, 'image/png');
+            } else {
+              fallbackCopyText();
+            }
+          } catch (e) {
+            console.error('Copy failed', e);
+            fallbackCopyText();
+          }
+
+          function fallbackCopyText() {
+             const textToCopy = `Closing Report: ${reportData.business_date}\nNet Sales: ${formatPrice(reportData.net_sales)}\nGross Sales: ${formatPrice(reportData.gross_sales)}\nTransactions: ${reportData.transaction_count}`;
+             navigator.clipboard.writeText(textToCopy).then(() => {
+               showToast('Report summary copied to clipboard.', 'success');
+             }).catch(() => {
+               showToast('Failed to copy report.', 'error');
+             });
+          }
+        };
+        copyBtn.replaceWith(copyBtn.cloneNode(true));
+        document.getElementById('btn-copy-closing-report').addEventListener('click', copyHandler);
+
+        // Clean local state and sync
+        setState('transactions', []);
+        
+        showToast(`Day closed successfully!`, 'success');
+
       } catch (err) {
         showToast(err.message, 'error');
         console.error(err);
+        const processingOverlay = document.getElementById('closing-report-processing');
+        if (processingOverlay) processingOverlay.classList.add('hidden');
       } finally {
-        btn.innerHTML = originalText;
         btn.disabled = false;
-        btn.classList.remove('opacity-50', 'cursor-not-allowed');
       }
     });
   }

@@ -33,6 +33,7 @@ import {
 
 import { queueSync } from '../db/syncEngine.js';
 import { getState, setState, formatPrice } from '../state.js';
+import { logVoid } from '../utils/voidLogger.js';
 
 // ─────────────────────────────────────────────
 // Main Executor
@@ -218,6 +219,16 @@ async function handleRemoveItem(intent) {
     return { success: false, message: `Item "${intent.item_name}" not found in order.` };
   }
 
+  // Log void for the removed item
+  await logVoid({
+    orderId: order.id,
+    tableName: table.name,
+    voidType: 'item_removed',
+    amount: targetItem.price * targetItem.quantity,
+    reason: null,
+    voidedBy: 'AI Command'
+  });
+
   // Remove the order item
   await removeOrderItem(targetItem.id);
   await queueSync('order_items', 'DELETE', { id: targetItem.id });
@@ -363,6 +374,16 @@ async function handleClearTable(intent) {
   if (!order) {
     return { success: false, message: `No open order on T${intent.table}.` };
   }
+
+  // Log void for the entire order cancellation
+  await logVoid({
+    orderId: order.id,
+    tableName: table.name,
+    voidType: 'order_cancelled',
+    amount: order.total || 0,
+    reason: null,
+    voidedBy: 'AI Command'
+  });
 
   // Delete all order items
   const orderItems = await getOrderItems(order.id);
@@ -649,7 +670,15 @@ async function handleUpdateItemQuantity(intent) {
   const qty = parseInt(intent.qty, 10) || 0;
 
   if (qty <= 0) {
-    // Treat as removal
+    // Treat as removal — log void
+    await logVoid({
+      orderId: order.id,
+      tableName: table.name,
+      voidType: 'item_removed',
+      amount: targetItem.price * targetItem.quantity,
+      reason: null,
+      voidedBy: 'AI Command'
+    });
     await removeOrderItem(targetItem.id);
     await queueSync('order_items', 'DELETE', { id: targetItem.id });
   } else {
@@ -715,6 +744,13 @@ function recalculateOrder(order, orderItems, discountPercent = 0) {
   const discount = subtotal * (discountPercent / 100);
   const total = subtotal + tax + service - discount;
 
+  let newDiscountType = order.discount_type;
+  if (discount > 0 && (!order.discount_type || order.discount_type === 'none')) {
+      newDiscountType = 'other';
+  } else if (discount === 0) {
+      newDiscountType = 'none';
+  }
+
   return {
     ...order,
     subtotal: Math.round(subtotal * 100) / 100,
@@ -722,6 +758,7 @@ function recalculateOrder(order, orderItems, discountPercent = 0) {
     service_charge: Math.round(service * 100) / 100,
     discount: Math.round(discount * 100) / 100,
     total: Math.round(total * 100) / 100,
+    discount_type: newDiscountType,
   };
 }
 

@@ -515,6 +515,24 @@
                   <span class="text-on-surface-variant font-body-md text-body-md">Discount (%)</span>
                   <input id="billing-discount-input" type="number" placeholder="0" class="w-16 h-7 text-right px-2 py-0 bg-surface-container border border-outline-variant rounded-md text-body-md focus:outline-none focus:border-primary font-mono-md" min="0" max="100">
                 </div>
+                <div class="flex justify-between items-center my-1 gap-2">
+                  <span class="text-on-surface-variant font-body-md text-body-md">Disc. Type</span>
+                  <select id="billing-discount-type" class="w-[120px] h-7 px-1 py-0 bg-surface-container border border-outline-variant rounded-md text-body-md focus:outline-none focus:border-primary font-body-md">
+                    <option value="none" selected>None</option>
+                    <option value="employee">Employee</option>
+                    <option value="complimentary">Complimentary</option>
+                    <option value="promotional">Promotional</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+                <div class="flex justify-between items-center my-1 gap-2">
+                  <span class="text-on-surface-variant font-body-md text-body-md">Reason</span>
+                  <input id="billing-discount-reason" type="text" placeholder="Optional" class="w-[120px] h-7 px-2 py-0 bg-surface-container border border-outline-variant rounded-md text-body-md focus:outline-none focus:border-primary font-body-md">
+                </div>
+                <div class="flex justify-between items-center my-1 gap-2">
+                  <span class="text-on-surface-variant font-body-md text-body-md">Applied By</span>
+                  <input id="billing-discount-applied-by" type="text" placeholder="Staff Name" class="w-[120px] h-7 px-2 py-0 bg-surface-container border border-outline-variant rounded-md text-body-md focus:outline-none focus:border-primary font-body-md">
+                </div>
                 <div class="flex justify-between items-center">
                   <span class="text-on-surface-variant font-body-md text-body-md">VAT 10%</span>
                   <span id="billing-vat" class="font-mono-md text-primary">0.00</span>
@@ -533,6 +551,14 @@
                 <span id="billing-total" class="font-headline-xl text-headline-xl text-primary font-black tracking-tight">0.00</span>
               </div>
               <div class="flex flex-col gap-sm">
+                <select id="billing-payment-method" class="w-full bg-surface-container border border-outline-variant py-3 px-4 rounded-xl font-label-md text-label-md text-on-surface focus:outline-none focus:border-primary cursor-pointer">
+                  <option value="cash" selected>Cash</option>
+                  <option value="card">Card</option>
+                  <option value="esewa">eSewa</option>
+                  <option value="khalti">Khalti</option>
+                  <option value="fonepay">Fonepay</option>
+                  <option value="other">Other</option>
+                </select>
                 <div class="grid grid-cols-[1fr,auto] gap-sm">
                   <button id="btn-pay" class="w-full bg-primary text-on-primary py-4 rounded-xl font-headline-md text-headline-md tracking-tight hover:opacity-90 transition-all active:scale-[0.98]">Pay & Close</button>
                   <button id="btn-clear" class="bg-surface-container border border-outline-variant px-6 py-4 rounded-xl font-label-md text-label-md text-primary hover:bg-surface-variant transition-colors">Clear</button>
@@ -1252,6 +1278,132 @@
             <span class="material-symbols-outlined text-[18px]">receipt_long</span>
             Close Day Now
           </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Void/Cancel Order Confirmation -->
+  <div id="void-confirm-modal" class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm hidden">
+    <div class="bg-surface-container-lowest rounded-2xl shadow-elevation-3 w-[340px] max-w-[90vw] overflow-hidden">
+      <div class="px-lg pt-lg pb-sm">
+        <h3 class="font-headline-md text-headline-md text-error mb-1">Cancel Order</h3>
+        <p id="void-confirm-message" class="text-body-md text-on-surface-variant mb-md">Cancel and clear all items?</p>
+        <div class="flex flex-col gap-sm">
+          <div>
+            <label class="text-[10px] font-label-md text-on-surface-variant uppercase tracking-widest block mb-1">Reason (optional)</label>
+            <input id="void-reason-input" type="text" placeholder="e.g. Customer left, Wrong order" class="w-full h-8 px-3 bg-surface-container border border-outline-variant rounded-lg text-body-md focus:outline-none focus:border-primary">
+          </div>
+          <div>
+            <label class="text-[10px] font-label-md text-on-surface-variant uppercase tracking-widest block mb-1">Voided By (optional)</label>
+            <input id="void-staff-input" type="text" placeholder="Staff name" class="w-full h-8 px-3 bg-surface-container border border-outline-variant rounded-lg text-body-md focus:outline-none focus:border-primary">
+          </div>
+        </div>
+      </div>
+      <div class="flex border-t border-outline-variant/30 divide-x divide-outline-variant/30">
+        <button id="void-confirm-cancel-btn" class="flex-1 py-3 font-label-md text-label-md text-on-surface-variant hover:bg-surface-container transition-colors">Keep Order</button>
+        <button id="void-confirm-ok-btn" class="flex-1 py-3 font-label-md text-label-md text-error font-bold hover:bg-error/10 transition-colors">Cancel Order</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Closing Report Processing Overlay -->
+  <div id="closing-report-processing" class="fixed inset-0 z-[10000] flex flex-col items-center justify-center bg-surface-container-lowest hidden">
+    <div class="w-48 h-48 mb-6">
+      <img src="/assets/calculator_animation.svg" alt="Calculating" class="w-full h-full object-contain">
+    </div>
+    <h2 class="font-headline-lg text-headline-lg text-primary tracking-tight mb-2">Generating Report...</h2>
+    <p class="text-body-md text-on-surface-variant animate-pulse">Aggregating daily transactions and records</p>
+  </div>
+
+  <!-- Professional Closing Report Modal -->
+  <div id="modal-closing-report-result" class="fixed inset-0 z-[10001] flex items-center justify-center bg-black/60 backdrop-blur-sm hidden">
+    <div class="relative bg-surface-container-lowest w-[95%] max-w-2xl rounded-2xl border border-outline-variant shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <!-- Header Actions -->
+      <div class="flex items-center justify-between p-md border-b border-outline-variant bg-surface-container">
+        <h2 class="font-headline-sm text-headline-sm text-primary tracking-tight">End of Day Report</h2>
+        <div class="flex items-center gap-2">
+          <button id="btn-copy-closing-report" type="button" class="h-9 px-3 bg-secondary-container text-on-secondary-container rounded-lg font-label-md hover:bg-secondary-container/80 transition-colors flex items-center gap-1">
+            <span class="material-symbols-outlined text-[16px]">content_copy</span> Copy
+          </button>
+          <button id="btn-save-closing-report" type="button" class="h-9 px-3 bg-primary text-on-primary rounded-lg font-label-md hover:opacity-90 transition-colors flex items-center gap-1 shadow-sm">
+            <span class="material-symbols-outlined text-[16px]">download</span> Save to Photos
+          </button>
+          <button id="btn-close-report-modal" type="button" class="w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-variant text-on-surface transition-colors ml-2">
+            <span class="material-symbols-outlined text-[20px]">close</span>
+          </button>
+        </div>
+      </div>
+      
+      <!-- Report Content (Scrollable & the part that gets screenshot) -->
+      <div id="closing-report-content" class="p-lg overflow-y-auto bg-surface-container-lowest flex-1 page">
+        <!-- Logo / Header -->
+        <div class="text-center mb-6">
+          <h1 id="cr-restaurant-name" class="font-headline-lg text-headline-lg text-primary tracking-tight">Restaurant Name</h1>
+          <p class="text-label-md text-on-surface-variant uppercase tracking-widest mt-1">Daily Closing Report</p>
+          <p id="cr-date-time" class="text-body-sm text-on-surface-variant mt-1">Date: ...</p>
+        </div>
+
+        <div class="space-y-6">
+          <!-- 1. Total Gross & Net Sales -->
+          <div class="bg-surface-container rounded-xl p-md border border-outline-variant/50">
+            <h3 class="font-title-md text-title-md text-on-surface mb-3 flex items-center gap-2"><span class="material-symbols-outlined text-primary text-[18px]">payments</span> Sales Overview</h3>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div>
+                <p class="text-label-sm text-on-surface-variant uppercase">Gross Sales</p>
+                <p id="cr-gross-sales" class="font-mono-lg font-bold text-on-surface">₨0.00</p>
+              </div>
+              <div>
+                <p class="text-label-sm text-on-surface-variant uppercase">Discounts</p>
+                <p id="cr-total-discounts" class="font-mono-lg font-bold text-error">-₨0.00</p>
+              </div>
+              <div>
+                <p class="text-label-sm text-on-surface-variant uppercase">Taxes & Fees</p>
+                <p id="cr-total-taxes" class="font-mono-lg font-bold text-on-surface-variant">₨0.00</p>
+              </div>
+              <div>
+                <p class="text-label-sm text-primary uppercase font-bold">Net Sales</p>
+                <p id="cr-net-sales" class="font-mono-xl font-black text-primary">₨0.00</p>
+              </div>
+            </div>
+            
+            <div class="mt-4 pt-4 border-t border-outline-variant/50">
+              <p class="text-label-sm text-on-surface-variant uppercase mb-2">Sales by Category</p>
+              <div id="cr-category-breakdown" class="grid grid-cols-2 gap-2 text-body-sm">
+                <!-- Injected via JS -->
+              </div>
+            </div>
+          </div>
+
+          <!-- 2. Payment Type Breakdown -->
+          <div class="bg-surface-container rounded-xl p-md border border-outline-variant/50">
+            <h3 class="font-title-md text-title-md text-on-surface mb-3 flex items-center gap-2"><span class="material-symbols-outlined text-secondary text-[18px]">account_balance_wallet</span> Payment Collection</h3>
+            <div id="cr-payment-breakdown" class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+               <!-- Injected via JS -->
+            </div>
+          </div>
+
+          <!-- 3. Exceptions & Reductions -->
+          <div class="bg-surface-container rounded-xl p-md border border-outline-variant/50">
+            <h3 class="font-title-md text-title-md text-error mb-3 flex items-center gap-2"><span class="material-symbols-outlined text-[18px]">warning</span> Exceptions & Voids</h3>
+            <div class="grid grid-cols-2 gap-4 mb-3">
+              <div>
+                <p class="text-label-sm text-on-surface-variant uppercase">Voided/Cancelled</p>
+                <p id="cr-voids-total" class="font-mono-md font-bold text-error">0 items (₨0.00)</p>
+              </div>
+              <div>
+                <p class="text-label-sm text-on-surface-variant uppercase">Complimentary</p>
+                <p id="cr-complimentary-total" class="font-mono-md font-bold text-secondary">0 items (₨0.00)</p>
+              </div>
+            </div>
+            <div id="cr-exception-logs" class="text-[11px] font-mono-sm text-on-surface-variant space-y-1 max-h-32 overflow-y-auto">
+               <!-- Injected via JS -->
+            </div>
+          </div>
+        </div>
+        
+        <div class="mt-8 text-center border-t border-outline-variant/30 pt-4">
+          <p class="text-[10px] text-on-surface-variant uppercase tracking-widest">End of Report • TableCraft OS</p>
         </div>
       </div>
     </div>

@@ -9,8 +9,8 @@ import Dexie from 'dexie';
 
 export const db = new Dexie('tablecraft-os');
 
-// Database Version 7: Added waiter_id and waiter_name to orders, and waiter_name to transactions
-db.version(7).stores({
+// Database Version 8: Added orderVoids store for void/cancellation logging
+db.version(8).stores({
   tables: 'id',
   menuItems: 'id',
   orders: 'id, table_id, status, bill_number, waiter_id',
@@ -23,7 +23,8 @@ db.version(7).stores({
   recipes: 'id, menu_item_id',
   restaurants: 'id',
   staffProfiles: 'id, role',
-  currentSession: 'id'
+  currentSession: 'id',
+  orderVoids: 'id, order_id'
 });
 
 /**
