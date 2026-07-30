@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS transactions_backup (
   id UUID PRIMARY KEY,
   order_id UUID,
   table_name TEXT,
+  bill_number TEXT,
   amount NUMERIC(10, 2) NOT NULL,
   payment_method TEXT NOT NULL,
   currency TEXT NOT NULL DEFAULT 'NPR',
