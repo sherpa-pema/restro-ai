@@ -254,8 +254,21 @@ async function processQueueEntry(entry) {
       console.warn(`[SyncEngine] FK violation for ${table}/${action} — discarding entry.`);
       return 'DISCARD';
     }
-    // Detect duplicate/conflict on a record whose parent no longer exists
+    // Detect duplicate/conflict
     if (err && (err.code === '23505' || err.status === 409 || err.code === '409')) {
+      // For transactions, if the transaction record already exists in Supabase by ID, consider it successful
+      if (table === 'transactions' && data.id) {
+        const { supabase } = await import('./supabase.js');
+        const { data: existingTx } = await supabase
+          .from('transactions')
+          .select('id')
+          .eq('id', data.id)
+          .maybeSingle();
+        if (existingTx) {
+          console.log(`[SyncEngine] Transaction ${data.id} already exists in Supabase — marking sync complete.`);
+          return true;
+        }
+      }
       console.warn(`[SyncEngine] Conflict/duplicate for ${table}/${action} — discarding entry.`);
       return 'DISCARD';
     }

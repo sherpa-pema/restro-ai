@@ -209,6 +209,7 @@ export async function pushTransaction(tx) {
     const dbTx = {
       id: tx.id,
       order_id: tx.order_id,
+      bill_number: tx.bill_number || null,
       table_name: tx.table_name,
       amount: tx.amount,
       payment_method: tx.payment_method,
@@ -237,6 +238,17 @@ export async function pushTransaction(tx) {
           }
         }
       }
+
+      // Handle duplicate bill_number constraint conflict (code 23505 / 409 on bill_number)
+      if (error.code === '23505' || (error.message && error.message.includes('bill_number'))) {
+        console.warn('[Supabase] Duplicate bill_number detected in pushTransaction, retrying with fallback null bill_number...');
+        const retryDbTx = { ...dbTx, bill_number: null };
+        const { error: retryErr } = await supabase
+          .from('transactions')
+          .upsert(retryDbTx, { onConflict: 'id' });
+        if (!retryErr) return true;
+      }
+
       throw error;
     }
     return true;

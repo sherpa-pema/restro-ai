@@ -42,6 +42,7 @@ export function initBillingPanel() {
         const transaction = {
           id: uuidv4(),
           order_id: order.id,
+          bill_number: order.bill_number || null,
           table_name: table.name,
           amount: order.total,
           payment_method: selectedPaymentMethod,
